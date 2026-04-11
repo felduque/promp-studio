@@ -9,7 +9,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Execution, PromptVersion, ProviderModel, ProviderType } from '../common/entities';
 import { ApiKeysService } from '../api-keys/api-keys.service';
-import { ExecutePromptDto } from './dto/execute-prompt.dto';
+import { ExecutePromptDto, PreviewExecuteDto } from './dto/execute-prompt.dto';
 import { ModelOrchestratorService } from '../model-orchestrator/model-orchestrator.service';
 import { ModelSyncService } from '../model-orchestrator/model-sync.service';
 
@@ -155,12 +155,17 @@ export class ExecutionsService {
     }
 
     // Resolve variables in content
-    let resolvedContent = version.content;
+    let resolvedContent = version.content || '';
     if (dto.variables) {
       for (const [key, value] of Object.entries(dto.variables)) {
         resolvedContent = resolvedContent.replaceAll(`{{${key}}}`, value);
       }
     }
+
+    // Debug: log para ver qué está pasando
+    console.log('[DEBUG] version.content:', JSON.stringify(version.content));
+    console.log('[DEBUG] resolvedContent:', JSON.stringify(resolvedContent));
+    console.log('[DEBUG] version.messages:', JSON.stringify(version.messages));
 
     // Build messages
     const messages = version.messages?.length
@@ -175,12 +180,26 @@ export class ExecutionsService {
         })
       : [{ role: 'user', content: resolvedContent }];
 
+    // Filter out empty messages and ensure content is string
+    let validMessages = messages
+      .filter(m => m.content && m.content.trim().length > 0)
+      .map(m => ({ role: m.role, content: m.content.trim() }));
+
+    // If all messages were empty, fall back to resolvedContent
+    if (validMessages.length === 0 && resolvedContent.trim().length > 0) {
+      validMessages = [{ role: 'user', content: resolvedContent.trim() }];
+    }
+
+    if (validMessages.length === 0) {
+      throw new BadRequestException('El prompt está vacío. Asegúrate de que el contenido no esté vacío y las variables tengan valores.');
+    }
+
     // Execute via orchestrator
     try {
       const result = await this.modelOrchestrator.execute({
         model,
         apiKey,
-        messages,
+        messages: validMessages,
         temperature: dto.temperature ?? 0.7,
         maxTokens: dto.maxTokens ?? 1024,
         topP: dto.topP ?? 1,
@@ -195,7 +214,7 @@ export class ExecutionsService {
         promptVersionId: dto.promptVersionId,
         provider,
         model: dto.model,
-        input: { variables: dto.variables || {}, messages },
+        input: { variables: dto.variables || {}, messages: validMessages },
         output: result.output,
         tokensIn: result.tokensIn,
         tokensOut: result.tokensOut,
@@ -249,6 +268,119 @@ export class ExecutionsService {
   // Admin: Sync models from providers
   async syncModels(): Promise<{ provider: string; count: number }[]> {
     return this.modelSyncService.syncAllProviders();
+  }
+
+  // Preview execution without saving to database
+  async executePreview(dto: PreviewExecuteDto, userId: string) {
+    // Find the model in database
+    let model = await this.providerModelRepository.findOne({
+      where: { externalId: dto.model },
+    });
+
+    // If not found, try to find by ID pattern
+    if (!model) {
+      const allModels = await this.providerModelRepository.find({
+        where: { isActive: true },
+      });
+      const foundModel = allModels.find((m) => m.externalId === dto.model || m.id === dto.model);
+      if (foundModel) {
+        model = foundModel;
+      }
+    }
+
+    if (!model) {
+      throw new BadRequestException(`Modelo ${dto.model} no encontrado o no disponible`);
+    }
+
+    const provider = model.provider;
+
+    // Get user's API key for this provider
+    const apiKey = await this.apiKeysService.getDecryptedKey(userId, provider);
+    if (!apiKey) {
+      throw new BadRequestException(
+        `No tienes una API key configurada para ${PROVIDER_LABELS[provider] ?? provider}. Ve a Settings → API Keys.`,
+      );
+    }
+
+    // Build messages from either content or messages array
+    let messages: Array<{ role: string; content: string }> = [];
+    
+    if (dto.messages?.length) {
+      // Chat mode: use messages array
+      messages = dto.messages.map((m) => {
+        let content = m.content;
+        if (dto.variables) {
+          for (const [key, value] of Object.entries(dto.variables)) {
+            content = content.replaceAll(`{{${key}}}`, value);
+          }
+        }
+        return { role: m.role, content };
+      });
+    } else if (dto.content) {
+      // Template mode: use content as single user message
+      let resolvedContent = dto.content;
+      if (dto.variables) {
+        for (const [key, value] of Object.entries(dto.variables)) {
+          resolvedContent = resolvedContent.replaceAll(`{{${key}}}`, value);
+        }
+      }
+      messages = [{ role: 'user', content: resolvedContent }];
+    }
+
+    // Filter out empty messages
+    const validMessages = messages
+      .filter(m => m.content && m.content.trim().length > 0)
+      .map(m => ({ role: m.role, content: m.content.trim() }));
+
+    if (validMessages.length === 0) {
+      throw new BadRequestException('El prompt está vacío. Asegúrate de que el contenido no esté vacío y las variables tengan valores.');
+    }
+
+    // Execute via orchestrator (no persistence)
+    try {
+      const result = await this.modelOrchestrator.execute({
+        model,
+        apiKey,
+        messages: validMessages,
+        temperature: dto.temperature ?? 0.7,
+        maxTokens: dto.maxTokens ?? 1024,
+        topP: dto.topP ?? 1,
+      });
+
+      const cost = model
+        ? (result.tokensIn / 1_000_000) * model.pricing.input +
+          (result.tokensOut / 1_000_000) * model.pricing.output
+        : 0;
+
+      // Return preview result without saving
+      return {
+        output: result.output,
+        tokensIn: result.tokensIn,
+        tokensOut: result.tokensOut,
+        latencyMs: result.latencyMs,
+        cost,
+        model: dto.model,
+        provider,
+        parameters: {
+          temperature: dto.temperature ?? 0.7,
+          maxTokens: dto.maxTokens ?? 1024,
+          topP: dto.topP ?? 1,
+        },
+        messages: validMessages, // Include sent messages in response
+      };
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.error?.message || error.message;
+      
+      if (errorMessage.includes('guardrail') || errorMessage.includes('data policy')) {
+        throw new BadRequestException(
+          `Error de privacidad en OpenRouter: Debes configurar tus preferencias de privacidad en https://openrouter.ai/settings/privacy`,
+        );
+      }
+      
+      throw new BadRequestException(
+        `Error ejecutando prompt: ${errorMessage}`,
+      );
+    }
   }
 
   // Get catalog for backward compatibility

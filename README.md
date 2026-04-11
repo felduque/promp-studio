@@ -1,5 +1,5 @@
 # Prompt Studio
-
+<!-- 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 -->
 Visual builder para prompts de LLMs — construye, versiona y testea prompts con variables dinámicas, comparación side-by-side y versionado tipo Git.
 
 ## Stack

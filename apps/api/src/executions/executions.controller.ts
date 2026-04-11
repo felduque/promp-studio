@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ExecutionsService } from './executions.service';
-import { ExecutePromptDto, BatchExecuteDto } from './dto/execute-prompt.dto';
+import { ExecutePromptDto, BatchExecuteDto, PreviewExecuteDto } from './dto/execute-prompt.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -63,5 +63,14 @@ export class ExecutionsController {
       success: true,
       synced: result,
     };
+  }
+
+  @Post('preview')
+  @ApiOperation({ summary: 'Ejecutar prompt sin guardar (preview)' })
+  previewExecute(
+    @Body() dto: PreviewExecuteDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.executionsService.executePreview(dto, user.id);
   }
 }
