@@ -105,7 +105,6 @@ export function useExecutionPanel(
   const handleExecute = useCallback(async (usePreview = false) => {
     if (selectedModels.length === 0) return;
     
-    // If using preview but no preview data available, fall back to saved version
     const canUsePreview = isDirty && (currentContent || (currentMessages && currentMessages.length > 0));
     const actuallyUsePreview = usePreview && canUsePreview;
     
@@ -120,66 +119,105 @@ export function useExecutionPanel(
     }
 
     try {
-      if (actuallyUsePreview) {
-        // Preview execution (no saving)
-        if (selectedModels.length === 1) {
-          const { data } = await apiClient.post('/executions/preview', {
-            model: selectedModels[0],
-            content: editorMode === 'template' ? currentContent : undefined,
-            messages: editorMode === 'chat' ? currentMessages : undefined,
-            variables: variablesMap,
-            temperature,
-            maxTokens,
-          });
-          setResults([{ model: selectedModels[0], status: 'fulfilled', data }]);
-        } else {
-          // Batch preview - execute sequentially
-          const results = await Promise.allSettled(
-            selectedModels.map((model) =>
-              apiClient.post('/executions/preview', {
-                model,
-                content: editorMode === 'template' ? currentContent : undefined,
-                messages: editorMode === 'chat' ? currentMessages : undefined,
-                variables: variablesMap,
-                temperature,
-                maxTokens,
-              })
-            )
-          );
-          const formattedResults = results.map((result, index) => ({
-            model: selectedModels[index],
-            status: result.status === 'fulfilled' ? 'fulfilled' as const : 'rejected' as const,
-            data: result.status === 'fulfilled' ? (result as PromiseFulfilledResult<any>).value?.data : undefined,
-            error: result.status === 'rejected' ? (result as PromiseRejectedResult).reason?.response?.data?.message || (result as PromiseRejectedResult).reason?.message : undefined,
-          }));
-          setResults(formattedResults);
-        }
-      } else {
-        // Normal execution using saved version
-        if (selectedModels.length === 1) {
-          const { data } = await apiClient.post('/executions', {
-            promptVersionId,
-            model: selectedModels[0],
-            variables: variablesMap,
-            temperature,
-            maxTokens,
-          });
-          setResults([{ model: selectedModels[0], status: 'fulfilled', data }]);
-        } else {
-          const { data } = await apiClient.post('/executions/batch', {
-            executions: selectedModels.map((model) => ({
-              promptVersionId,
-              model,
+      if (selectedModels.length === 1) {
+        // Single model — direct call, no streaming needed
+        const endpoint = actuallyUsePreview ? '/executions/preview' : '/executions';
+        const payload = actuallyUsePreview
+          ? {
+              model: selectedModels[0],
+              source: editorMode === 'chat' ? 'chat' : 'prompt',
+              content: editorMode === 'template' ? currentContent : undefined,
+              messages: editorMode === 'chat' ? currentMessages : undefined,
               variables: variablesMap,
               temperature,
               maxTokens,
-            })),
-          });
-          setResults(data);
+            }
+          : {
+              promptVersionId,
+              model: selectedModels[0],
+              source: editorMode === 'chat' ? 'chat' : 'prompt',
+              variables: variablesMap,
+              temperature,
+              maxTokens,
+            };
+
+        const { data } = await apiClient.post(endpoint, payload);
+        setResults([{ model: selectedModels[0], status: 'fulfilled', data }]);
+      } else {
+        // Multiple models — use SSE stream for progressive results
+        const payload = {
+          models: selectedModels,
+          promptVersionId: actuallyUsePreview ? undefined : promptVersionId,
+          source: editorMode === 'chat' ? 'chat' : 'prompt',
+          content: actuallyUsePreview && editorMode === 'template' ? currentContent : undefined,
+          messages: actuallyUsePreview && editorMode === 'chat' ? currentMessages : undefined,
+          variables: variablesMap,
+          temperature,
+          maxTokens,
+        };
+
+        // Get auth token for the fetch request
+        const token = localStorage.getItem('access_token');
+
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+        const response = await fetch(
+          `${apiBase}/api/executions/stream`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(payload),
+          },
+        );
+
+        if (!response.ok || !response.body) {
+          throw new Error(`Stream failed: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const json = line.slice(6).trim();
+            if (!json) continue;
+
+            try {
+              const event = JSON.parse(json);
+              if (event.type === 'done') continue;
+              if (event.type === 'error') {
+                setResults((prev) => [...prev, { model: '', status: 'rejected', error: event.error }]);
+                continue;
+              }
+              if (event.status === 'validation' && event.invalidModels) {
+                // Models that don't exist — show as rejected
+                for (const m of event.invalidModels) {
+                  setResults((prev) => [...prev, { model: m, status: 'rejected', error: 'Modelo no disponible o inexistente en el catálogo' }]);
+                }
+                continue;
+              }
+              // Append each result as it arrives
+              setResults((prev) => [...prev, event]);
+            } catch {
+              // Skip malformed JSON
+            }
+          }
         }
       }
     } catch (err: any) {
-      setResults([
+      setResults((prev) => [
+        ...prev,
         {
           model: selectedModels[0],
           status: 'rejected',

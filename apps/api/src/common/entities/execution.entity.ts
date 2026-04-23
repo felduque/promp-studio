@@ -5,25 +5,51 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { PromptVersion } from './prompt-version.entity';
+import { User } from './user.entity';
+import { ExecutionGroup } from './execution-group.entity';
+
+export type ExecutionSource = 'prompt' | 'chat';
 
 @Entity('executions')
 export class Execution {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
-  promptVersionId: string;
+  @Column({ nullable: true })
+  promptVersionId: string | null;
 
-  @ManyToOne(() => PromptVersion, (version) => version.executions, { onDelete: 'CASCADE' })
+  @ManyToOne(() => PromptVersion, (version) => version.executions, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'promptVersionId' })
   promptVersion: PromptVersion;
 
+  @Column({ type: 'uuid', nullable: true })
+  @Index()
+  groupId: string | null;
+
+  @ManyToOne(() => ExecutionGroup, (g) => g.executions, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'groupId' })
+  group: ExecutionGroup;
+
   @Column()
+  userId: string;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'userId' })
+  user: User;
+
+  @Column({ type: 'enum', enum: ['prompt', 'chat'], default: 'prompt' })
+  @Index()
+  source: ExecutionSource;
+
+  @Column()
+  @Index()
   provider: string;
 
   @Column()
+  @Index()
   model: string;
 
   @Column({ type: 'jsonb' })
@@ -51,6 +77,7 @@ export class Execution {
     topP?: number;
   };
 
+  @Index()
   @CreateDateColumn()
   createdAt: Date;
 }

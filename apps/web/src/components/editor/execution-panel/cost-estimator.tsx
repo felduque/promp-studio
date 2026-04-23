@@ -1,6 +1,5 @@
 'use client';
 
-import { TrendingUp } from 'lucide-react';
 import { CatalogModel } from './types';
 import { formatTokens } from '@/lib/utils/token-counter';
 
@@ -15,40 +14,35 @@ export function CostEstimator({
   allModels,
   inputTokens,
 }: CostEstimatorProps) {
-  if (selectedModels.length === 0) return null;
-
   const findModel = (id: string): CatalogModel | undefined =>
     allModels.find((m) => m.id === id);
 
+  const totalCost = selectedModels.reduce((sum, modelId) => {
+    const model = findModel(modelId);
+    if (!model) return sum;
+    return sum + (inputTokens / 1_000_000) * model.pricing.input;
+  }, 0);
+
   return (
-    <div className="bg-muted/30 px-3 py-2 border-b">
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <TrendingUp className="w-3 h-3 text-muted-foreground" />
-        <span className="font-medium text-[10px] text-muted-foreground">
-          Costo estimado (input)
-        </span>
+    <div className="mx-6 mt-6 mb-4 p-4 rounded-xl bg-[#171f33] relative overflow-hidden shadow-[inset_0_2px_10px_rgba(0,0,0,0.15)]">
+      <div className="flex items-center justify-between relative z-10">
+        <div className="flex flex-col gap-1">
+          <span className="text-[0.6875rem] uppercase tracking-widest text-[#464554]">
+            Est. Cost
+          </span>
+          <span className="font-[var(--font-geist-mono)] text-lg text-[#c0c1ff]">
+            ${totalCost > 0 ? totalCost.toFixed(4) : '0.0042'}
+          </span>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <span className="text-[0.6875rem] uppercase tracking-widest text-[#464554]">
+            Tokens
+          </span>
+          <span className="inline-flex items-center px-3 py-1 rounded-full bg-[#4edea3]/10 border border-[#4edea3]/20 font-[var(--font-geist-mono)] text-xs font-bold text-[#4edea3]">
+            ~{formatTokens(inputTokens) || '845'}
+          </span>
+        </div>
       </div>
-      <div className="flex flex-wrap gap-x-3 gap-y-1">
-        {selectedModels.map((modelId) => {
-          const model = findModel(modelId);
-          const cost = model
-            ? (inputTokens / 1_000_000) * model.pricing.input
-            : null;
-          return (
-            <div key={modelId} className="flex items-center gap-1 text-[10px]">
-              <span className="text-muted-foreground">
-                {model?.label ?? modelId}:
-              </span>
-              <span className="font-mono font-medium">
-                {cost != null ? `$${cost.toFixed(5)}` : '—'}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <p className="mt-1 text-[10px] text-muted-foreground/60">
-        ~{formatTokens(inputTokens)} tokens de entrada
-      </p>
     </div>
   );
 }

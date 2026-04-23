@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "figma": {
+      "type": "http",
+      "url": "https://mcp.figma.com/mcp",
+      "autoApprove": [
+        "whoami",
+        "get_metadata",
+        "get_screenshot",
+        "get_screenshot",
+        "get_screenshot",
+        "get_screenshot",
+        "get_design_context"
+      ],
+      "disabled": true
+    },
+    "stitch": {
+      "type": "http",
+      "url": "https://stitch.googleapis.com/mcp",
+      "headers": {
+        "X-Goog-Api-Key": "AQ.Ab8RN6KBr5dmRkOl5qb6eDPM2tj5c3GQfnxQLPy2qwZSdMp7Vg"
+      },
+      "autoApprove": [
+        "list_design_systems",
+        "list_screens",
+        "get_screen",
+        "get_screen"
+      ]
+    }
+  }
+}

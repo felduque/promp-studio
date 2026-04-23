@@ -7,7 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import { Execution, PromptVersion, ProviderModel, ProviderType } from '../common/entities';
+import { Execution, PromptVersion, ProviderModel, ProviderType, ExecutionSource, ExecutionGroup } from '../common/entities';
 import { ApiKeysService } from '../api-keys/api-keys.service';
 import { ExecutePromptDto, PreviewExecuteDto } from './dto/execute-prompt.dto';
 import { ModelOrchestratorService } from '../model-orchestrator/model-orchestrator.service';
@@ -46,6 +46,8 @@ export class ExecutionsService {
     private readonly versionRepository: Repository<PromptVersion>,
     @InjectRepository(ProviderModel)
     private readonly providerModelRepository: Repository<ProviderModel>,
+    @InjectRepository(ExecutionGroup)
+    private readonly groupRepository: Repository<ExecutionGroup>,
     private readonly apiKeysService: ApiKeysService,
     private readonly httpService: HttpService,
     private readonly modelOrchestrator: ModelOrchestratorService,
@@ -212,6 +214,8 @@ export class ExecutionsService {
 
       const execution = this.executionRepository.create({
         promptVersionId: dto.promptVersionId,
+        userId,
+        source: (dto.source || 'prompt') as ExecutionSource,
         provider,
         model: dto.model,
         input: { variables: dto.variables || {}, messages: validMessages },
@@ -244,6 +248,25 @@ export class ExecutionsService {
     }
   }
 
+  /**
+   * Validate that models exist in the catalog and are active.
+   * Returns { valid, invalid } arrays.
+   */
+  async validateModels(modelIds: string[]): Promise<{ valid: string[]; invalid: string[] }> {
+    const activeModels = await this.providerModelRepository.find({
+      where: { isActive: true },
+      select: ['externalId'],
+    });
+    const activeSet = new Set(activeModels.map((m) => m.externalId));
+    const valid: string[] = [];
+    const invalid: string[] = [];
+    for (const id of modelIds) {
+      if (activeSet.has(id)) valid.push(id);
+      else invalid.push(id);
+    }
+    return { valid, invalid };
+  }
+
   async executeBatch(executions: ExecutePromptDto[], userId: string) {
     const results = await Promise.allSettled(
       executions.map((dto) => this.execute(dto, userId)),
@@ -256,6 +279,136 @@ export class ExecutionsService {
       error:
         result.status === 'rejected' ? result.reason?.message : undefined,
     }));
+  }
+
+  /**
+   * Stream execution: validates models, creates a group, runs N models in parallel,
+   * yields each result as it arrives. Used with SSE on the controller side.
+   */
+  async *executeStream(
+    dto: {
+      models: string[];
+      promptVersionId?: string;
+      source?: 'prompt' | 'chat';
+      content?: string;
+      messages?: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+      variables?: Record<string, string>;
+      temperature?: number;
+      maxTokens?: number;
+    },
+    userId: string,
+  ): AsyncGenerator<{ model: string; status: string; data?: any; error?: string; groupId?: string; invalidModels?: string[] }> {
+    const { models, ...params } = dto;
+
+    // 1. Validate models exist in catalog
+    const { valid, invalid } = await this.validateModels(models);
+
+    if (invalid.length > 0) {
+      yield { model: '', status: 'validation', invalidModels: invalid };
+    }
+
+    if (valid.length === 0) {
+      yield { model: '', status: 'error', error: 'Ninguno de los modelos seleccionados está disponible.' };
+      return;
+    }
+
+    // 2. Create execution group
+    const group = this.groupRepository.create({
+      userId,
+      promptVersionId: params.promptVersionId || null,
+      models: valid,
+      parameters: {
+        temperature: params.temperature,
+        maxTokens: params.maxTokens,
+      },
+      input: {
+        content: params.content,
+        variables: params.variables,
+        source: params.source,
+      },
+    });
+    const savedGroup = await this.groupRepository.save(group);
+
+    // 3. Execute each valid model
+    const pending = valid.map((model) => {
+      const isPreview = !params.promptVersionId;
+
+      const promise = isPreview
+        ? this.executePreview(
+            {
+              model,
+              source: params.source,
+              content: params.content,
+              messages: params.messages,
+              variables: params.variables,
+              temperature: params.temperature,
+              maxTokens: params.maxTokens,
+            },
+            userId,
+          )
+        : this.execute(
+            {
+              promptVersionId: params.promptVersionId!,
+              model,
+              source: params.source,
+              variables: params.variables,
+              temperature: params.temperature,
+              maxTokens: params.maxTokens,
+            },
+            userId,
+          );
+
+      return promise
+        .then(async (data) => {
+          // Assign groupId to the execution
+          if (data?.id) {
+            await this.executionRepository.update(data.id, { groupId: savedGroup.id });
+          }
+          return { model, status: 'fulfilled' as const, data, groupId: savedGroup.id };
+        })
+        .catch((err) => ({
+          model,
+          status: 'rejected' as const,
+          error: err?.response?.message || err?.message || 'Unknown error',
+          groupId: savedGroup.id,
+        }));
+    });
+
+    // 4. Yield results as they arrive using Promise.race
+    const remaining = [...pending];
+    while (remaining.length > 0) {
+      const result = await Promise.race(
+        remaining.map((p, i) => p.then((r) => ({ result: r, index: i }))),
+      );
+      yield result.result;
+      remaining.splice(result.index, 1);
+    }
+  }
+
+  /**
+   * Get execution groups for a user with their executions
+   */
+  async getGroups(userId: string, page = 1, limit = 20) {
+    const [items, total] = await this.groupRepository.findAndCount({
+      where: { userId },
+      relations: ['executions', 'promptVersion', 'promptVersion.prompt', 'promptVersion.prompt.project'],
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    return { items, total, page, limit, pages: Math.ceil(total / limit) };
+  }
+
+  /**
+   * Get a single execution group with full execution details
+   */
+  async getGroup(groupId: string, userId: string) {
+    const group = await this.groupRepository.findOne({
+      where: { id: groupId, userId },
+      relations: ['executions', 'promptVersion', 'promptVersion.prompt', 'promptVersion.prompt.project'],
+    });
+    if (!group) throw new NotFoundException('Grupo de ejecución no encontrado');
+    return group;
   }
 
   async findByVersion(promptVersionId: string) {
@@ -336,7 +489,7 @@ export class ExecutionsService {
       throw new BadRequestException('El prompt está vacío. Asegúrate de que el contenido no esté vacío y las variables tengan valores.');
     }
 
-    // Execute via orchestrator (no persistence)
+    // Execute via orchestrator and persist for history
     try {
       const result = await this.modelOrchestrator.execute({
         model,
@@ -352,8 +505,30 @@ export class ExecutionsService {
           (result.tokensOut / 1_000_000) * model.pricing.output
         : 0;
 
-      // Return preview result without saving
+      // Save to database for history (promptVersionId is null for preview)
+      const execution = this.executionRepository.create({
+        promptVersionId: null,
+        userId,
+        source: (dto.source || 'chat') as ExecutionSource,
+        provider,
+        model: dto.model,
+        input: { content: dto.content, messages: validMessages, variables: dto.variables || {} },
+        output: result.output,
+        tokensIn: result.tokensIn,
+        tokensOut: result.tokensOut,
+        latencyMs: result.latencyMs,
+        cost,
+        parameters: {
+          temperature: dto.temperature ?? 0.7,
+          maxTokens: dto.maxTokens ?? 1024,
+          topP: dto.topP ?? 1,
+        },
+      });
+
+      const saved = await this.executionRepository.save(execution);
+
       return {
+        id: saved.id,
         output: result.output,
         tokensIn: result.tokensIn,
         tokensOut: result.tokensOut,
@@ -361,12 +536,13 @@ export class ExecutionsService {
         cost,
         model: dto.model,
         provider,
+        source: saved.source,
         parameters: {
           temperature: dto.temperature ?? 0.7,
           maxTokens: dto.maxTokens ?? 1024,
           topP: dto.topP ?? 1,
         },
-        messages: validMessages, // Include sent messages in response
+        messages: validMessages,
       };
     } catch (error: any) {
       const errorMessage = error?.response?.data?.error?.message || error.message;
@@ -381,6 +557,52 @@ export class ExecutionsService {
         `Error ejecutando prompt: ${errorMessage}`,
       );
     }
+  }
+
+  // List executions with filters and pagination
+  async findAll(
+    userId: string,
+    filters: {
+      source?: 'prompt' | 'chat';
+      model?: string;
+      provider?: string;
+      page?: number;
+      limit?: number;
+    } = {},
+  ) {
+    const page = filters.page || 1;
+    const limit = Math.min(filters.limit || 20, 100);
+
+    const qb = this.executionRepository
+      .createQueryBuilder('e')
+      .where('e.userId = :userId', { userId })
+      .leftJoinAndSelect('e.promptVersion', 'pv')
+      .leftJoin('pv.prompt', 'p')
+      .addSelect(['p.id', 'p.name']);
+
+    if (filters.source) {
+      qb.andWhere('e.source = :source', { source: filters.source });
+    }
+    if (filters.model) {
+      qb.andWhere('e.model = :model', { model: filters.model });
+    }
+    if (filters.provider) {
+      qb.andWhere('e.provider = :provider', { provider: filters.provider });
+    }
+
+    const [items, total] = await qb
+      .orderBy('e.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    };
   }
 
   // Get catalog for backward compatibility

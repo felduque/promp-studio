@@ -10,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import { Variable } from 'lucide-react';
 
 export function VariablesPanel() {
@@ -19,11 +18,11 @@ export function VariablesPanel() {
   if (variables.length === 0) {
     return (
       <div className="flex flex-col justify-center items-center py-12 text-center">
-        <Variable className="w-8 h-8 text-muted-foreground/40" />
-        <p className="mt-3 text-muted-foreground text-sm">
+        <Variable className="w-8 h-8 text-ps-text-muted/40" />
+        <p className="mt-3 text-ps-text-muted text-sm">
           Sin variables detectadas
         </p>
-        <p className="mt-1 text-muted-foreground/70 text-xs">
+        <p className="mt-1 text-ps-text-muted/70 text-xs">
           Usa {'{{nombre}}'} en tu prompt para crear variables
         </p>
       </div>
@@ -46,32 +45,32 @@ export function VariablesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 font-medium text-sm">
+      <div className="flex items-center gap-2 font-medium text-sm text-ps-text-secondary">
         <Variable className="w-4 h-4" />
         Variables
-        <Badge variant="secondary" className="ml-auto">
+        <span className="ml-auto bg-ps-bg-elevated px-2 py-0.5 rounded text-xs text-ps-text-muted">
           {variables.length}
-        </Badge>
+        </span>
       </div>
 
       <div className="space-y-4">
         {variables.map((variable) => (
           <div
             key={variable.name}
-            className="space-y-2 p-3 border rounded-lg"
+            className="space-y-2 p-3 bg-ps-bg-elevated rounded-lg border border-ps-border-subtle"
           >
             <div className="flex justify-between items-center">
-              <Label className="font-mono text-primary text-xs">
+              <Label className="font-mono text-ps-accent text-xs">
                 {`{{${variable.name}}}`}
               </Label>
               <Select
                 value={variable.type}
                 onValueChange={(val) => val && handleTypeChange(variable.name, val)}
               >
-                <SelectTrigger className="w-24 h-7 text-xs">
+                <SelectTrigger className="w-24 h-7 text-xs bg-ps-bg-deep border-ps-border">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-ps-bg-surface border-ps-border">
                   <SelectItem value="string">String</SelectItem>
                   <SelectItem value="number">Number</SelectItem>
                   <SelectItem value="enum">Enum</SelectItem>
@@ -86,14 +85,14 @@ export function VariablesPanel() {
               onChange={(e) =>
                 handleDefaultChange(variable.name, e.target.value)
               }
-              className="h-8 text-xs"
+              className="h-8 text-xs bg-ps-bg-deep border-ps-border text-ps-text-primary"
             />
 
             <Input
               placeholder="Valor de prueba"
               value={variable.value ?? ''}
               onChange={(e) => setVariableValue(variable.name, e.target.value)}
-              className="border-primary/30 focus-visible:ring-primary/30 h-8 text-xs"
+              className="h-8 text-xs bg-ps-bg-deep border-ps-accent/30 focus-visible:ring-ps-accent/30 text-ps-text-primary"
             />
           </div>
         ))}

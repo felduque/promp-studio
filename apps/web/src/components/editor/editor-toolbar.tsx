@@ -3,10 +3,7 @@
 import { useState } from 'react';
 import { usePromptStore } from '@/lib/stores/prompt-store';
 import { insertTextAtCursor } from '@/lib/editor-ref';
-import { estimateTokens, formatTokens } from '@/lib/utils/token-counter';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import {
   Popover,
@@ -22,124 +19,46 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Variable,
-  FileCode,
-  MessageSquare,
-  FileText,
-  Hash,
-  Keyboard,
-  Braces,
-} from 'lucide-react';
+import { Braces, FileCode } from 'lucide-react';
+import { PromptExport } from './prompt-export';
 
 const PROMPT_TEMPLATES = [
   {
     name: 'Chain of Thought',
     icon: '🧠',
-    content: `You are a helpful assistant. Let's think step by step.
-
-Problem: {{problem}}
-
-1. First, analyze the core question.
-2. Break it into sub-problems.
-3. Solve each sub-problem.
-4. Synthesize the final answer.`,
+    content: `You are a helpful assistant. Let's think step by step.\n\nProblem: {{problem}}\n\n1. First, analyze the core question.\n2. Break it into sub-problems.\n3. Solve each sub-problem.\n4. Synthesize the final answer.`,
   },
   {
     name: 'Few-Shot',
     icon: '📝',
-    content: `Given the following examples, process the new input accordingly.
-
-Example 1:
-Input: {{example1_input}}
-Output: {{example1_output}}
-
-Example 2:
-Input: {{example2_input}}
-Output: {{example2_output}}
-
-Now process:
-Input: {{input}}
-Output:`,
+    content: `Given the following examples, process the new input accordingly.\n\nExample 1:\nInput: {{example1_input}}\nOutput: {{example1_output}}\n\nNow process:\nInput: {{input}}\nOutput:`,
   },
   {
     name: 'Role Play',
     icon: '🎭',
-    content: `You are {{role}}, an expert in {{domain}}.
-
-Your task is to {{task}}.
-
-Guidelines:
-- {{guideline1}}
-- {{guideline2}}
-
-Context: {{context}}
-
-Please respond in a {{tone}} tone.`,
+    content: `You are {{role}}, an expert in {{domain}}.\n\nYour task is to {{task}}.\n\nGuidelines:\n- {{guideline1}}\n- {{guideline2}}\n\nContext: {{context}}`,
   },
   {
     name: 'Extractor',
     icon: '🔍',
-    content: `Extract the following information from the text below:
-
-Fields to extract:
-{{fields}}
-
-Text:
-"""
-{{text}}
-"""
-
-Return the result as a JSON object.`,
-  },
-  {
-    name: 'Evaluador',
-    icon: '⚖️',
-    content: `Evaluate the following {{item_type}} based on these criteria:
-
-Criteria:
-1. {{criteria1}} (weight: {{weight1}})
-2. {{criteria2}} (weight: {{weight2}})
-3. {{criteria3}} (weight: {{weight3}})
-
-Item to evaluate:
-"""
-{{item}}
-"""
-
-Provide a score (1-10) for each criterion and an overall assessment.`,
+    content: `Extract the following information from the text below:\n\nFields to extract:\n{{fields}}\n\nText:\n"""\n{{text}}\n"""\n\nReturn the result as a JSON object.`,
   },
   {
     name: 'Traductor',
     icon: '🌐',
-    content: `Translate the following text from {{source_language}} to {{target_language}}.
-
-Maintain the original:
-- Tone and style
-- Technical terminology
-- Formatting
-
-Text:
-"""
-{{text}}
-"""`,
+    content: `// Role Definition\nYou are a professional translator with expertise in {{source_language}} and {{target_language}}.\n\n// Context\nTranslate the following text while preserving:\n- Original tone and register ({{tone}})\n- Technical terminology and domain-specific jargon\n- Formatting, line breaks, and structure\n- Cultural nuances and idiomatic expressions\n\n// Glossary (optional)\nUse these preferred translations for key terms:\n{{glossary}}\n\n// Source Text\n"""\n{{source_text}}\n"""\n\n// Instructions\n1. Analyze the source text for context, tone, and domain.\n2. Translate naturally — avoid literal word-by-word translation.\n3. Adapt idioms and cultural references for the target audience.\n4. If a term has no direct equivalent, provide the closest match with a translator's note in [brackets].\n5. Return ONLY the translated text, no explanations.`,
+  },
+  {
+    name: 'Evaluador',
+    icon: '⚖️',
+    content: `Evaluate the following {{item_type}} based on these criteria:\n\nCriteria:\n1. {{criteria1}} (weight: {{weight1}})\n2. {{criteria2}} (weight: {{weight2}})\n3. {{criteria3}} (weight: {{weight3}})\n\nItem to evaluate:\n"""\n{{item}}\n"""\n\nProvide a score (1-10) for each criterion and an overall assessment.`,
   },
 ];
 
-const VARIABLE_TYPES = [
-  { type: 'string', icon: <Variable className="w-3.5 h-3.5" />, label: 'Texto', template: '{{name}}' },
-  { type: 'number', icon: <Hash className="w-3.5 h-3.5" />, label: 'Numero', template: '{{count}}' },
-  { type: 'json', icon: <Braces className="w-3.5 h-3.5" />, label: 'JSON', template: '{{data}}' },
-];
-
 export function EditorToolbar() {
-  const { content, variables, editorMode, setEditorMode } = usePromptStore();
+  const { variables, editorMode, setEditorMode } = usePromptStore();
   const [varName, setVarName] = useState('');
   const [varPopoverOpen, setVarPopoverOpen] = useState(false);
-
-  const tokens = estimateTokens(content);
-  const words = content ? content.split(/\s+/).filter(Boolean).length : 0;
-  const chars = content?.length || 0;
 
   const handleInsertVariable = () => {
     const name = varName.trim();
@@ -158,138 +77,99 @@ export function EditorToolbar() {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1 bg-muted/30 px-2 py-1.5 border-b">
-      {/* Insert Variable */}
-      <Popover open={varPopoverOpen} onOpenChange={setVarPopoverOpen}>
-        <PopoverTrigger render={<Button variant="ghost" size="sm" className="gap-1 px-2 h-7 text-xs" />}>
-          <Variable className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Variable</span>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="p-3 w-64">
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <label className="font-medium text-xs">Nueva variable</label>
-              <div className="flex gap-1.5">
-                <Input
-                  placeholder="nombre_variable"
-                  value={varName}
-                  onChange={(e) => setVarName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleInsertVariable()}
-                  className="h-7 text-xs"
-                />
-                <Button size="sm" className="px-2 h-7 text-xs" onClick={handleInsertVariable}>
-                  Insertar
-                </Button>
-              </div>
-            </div>
-            {variables.length > 0 && (
+    <div className="flex items-center justify-between bg-[#131b2e] border-b border-[#2d3449]/30 px-4 py-3">
+      {/* Left: Action buttons */}
+      <div className="flex items-center gap-2">
+        {/* Variables */}
+        <Popover open={varPopoverOpen} onOpenChange={setVarPopoverOpen}>
+          <PopoverTrigger render={<button className="flex items-center gap-2 px-3 py-1.5 text-[#c0c1ff] text-sm hover:bg-[#2d3449]/50 rounded transition-colors" />}>
+            <Braces className="w-3.5 h-3.5" />
+            Variables
+          </PopoverTrigger>
+          <PopoverContent align="start" className="p-3 w-64 bg-[#131b2e] border-[rgba(70,69,84,0.15)]">
+            <div className="space-y-3">
               <div className="space-y-1.5">
-                <label className="font-medium text-muted-foreground text-xs">Variables existentes</label>
-                <div className="flex flex-wrap gap-1">
-                  {variables.map((v) => (
-                    <button
-                      key={v.name}
-                      onClick={() => handleInsertExistingVar(v.name)}
-                      className="inline-flex items-center gap-1 bg-primary/10 hover:bg-primary/20 px-2 py-0.5 rounded-md font-mono text-primary text-xs transition-colors"
-                    >
-                      {`{{${v.name}}}`}
-                    </button>
-                  ))}
+                <label className="font-medium text-xs text-[#c7c4d7]">Nueva variable</label>
+                <div className="flex gap-1.5">
+                  <Input
+                    placeholder="nombre_variable"
+                    value={varName}
+                    onChange={(e) => setVarName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleInsertVariable()}
+                    className="h-7 text-xs bg-[#060e20] border-[rgba(70,69,84,0.3)] text-[#dae2fd]"
+                  />
+                  <Button size="sm" variant="gradient" className="px-2 h-7 text-xs" onClick={handleInsertVariable}>
+                    Insertar
+                  </Button>
                 </div>
               </div>
-            )}
-          </div>
-        </PopoverContent>
-      </Popover>
+              {variables.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="font-medium text-[#464554] text-xs">Existentes</label>
+                  <div className="flex flex-wrap gap-1">
+                    {variables.map((v) => (
+                      <button
+                        key={v.name}
+                        onClick={() => handleInsertExistingVar(v.name)}
+                        className="inline-flex items-center bg-[#39485a] px-1.5 py-0.5 rounded font-[var(--font-geist-mono)] text-[#a7b6cc] text-xs hover:bg-[#39485a]/80 transition-colors"
+                      >
+                        {`{{${v.name}}}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
 
-      {/* Templates */}
-      <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="gap-1 px-2 h-7 text-xs" />}>
-          <FileCode className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Templates</span>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel>Plantillas de prompt</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {PROMPT_TEMPLATES.map((t) => (
-              <DropdownMenuItem key={t.name} onClick={() => handleInsertTemplate(t.content)}>
-                <span className="mr-2">{t.icon}</span>
-                {t.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        {/* Templates */}
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<button className="flex items-center gap-2 px-3 py-1.5 text-[#c0c1ff] text-sm hover:bg-[#2d3449]/50 rounded transition-colors" />}>
+            <FileCode className="w-3.5 h-3.5" />
+            Templates
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56 bg-[#131b2e] border-[rgba(70,69,84,0.15)]">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="text-[#464554]">Plantillas</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {PROMPT_TEMPLATES.map((t) => (
+                <DropdownMenuItem key={t.name} onClick={() => handleInsertTemplate(t.content)} className="text-[#c7c4d7] hover:text-[#dae2fd]">
+                  <span className="mr-2">{t.icon}</span>
+                  {t.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-      <Separator orientation="vertical" className="mx-1 h-4" />
+        {/* Export */}
+        <PromptExport />
+      </div>
 
-      {/* Mode Toggle */}
-      <div className="flex items-center bg-background p-0.5 border rounded-md">
+      {/* Right: Mode Toggle — matches Stitch's segmented control */}
+      <div className="bg-[#2d3449] p-1 rounded-lg flex items-center backdrop-blur-md shadow-inner shadow-black/20">
         <button
           onClick={() => setEditorMode('template')}
-          className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+          className={`px-4 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-all ${
             editorMode === 'template'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
+              ? 'bg-[#131b2e] text-[#dae2fd] shadow-sm'
+              : 'text-[#c7c4d7] hover:text-[#dae2fd]'
           }`}
         >
-          <FileText className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Template</span>
+          Template
         </button>
         <button
           onClick={() => setEditorMode('chat')}
-          className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+          className={`px-4 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-all ${
             editorMode === 'chat'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
+              ? 'bg-[#131b2e] text-[#dae2fd] shadow-sm'
+              : 'text-[#c7c4d7] hover:text-[#dae2fd]'
           }`}
         >
-          <MessageSquare className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Chat</span>
+          Chat
         </button>
       </div>
-
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Stats */}
-      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-        <span className="hidden sm:inline" title="Tokens estimados">
-          ~{formatTokens(tokens)} tokens
-        </span>
-        <span className="hidden md:inline">{words} palabras</span>
-        <span className="hidden lg:inline">{chars} chars</span>
-        <Badge variant="outline" className="px-1.5 py-0 h-5 text-[10px]">
-          ~{formatTokens(tokens)} tok
-        </Badge>
-      </div>
-
-      {/* Shortcuts hint */}
-      <Popover>
-        <PopoverTrigger render={<Button variant="ghost" size="sm" className="p-0 w-7 h-7" />}>
-          <Keyboard className="w-3.5 h-3.5 text-muted-foreground" />
-        </PopoverTrigger>
-        <PopoverContent align="end" className="p-3 w-52">
-          <div className="space-y-2">
-            <p className="font-medium text-xs">Atajos de teclado</p>
-            <div className="space-y-1.5 text-muted-foreground text-xs">
-              <div className="flex justify-between">
-                <span>Guardar version</span>
-                <kbd className="bg-muted px-1.5 py-0.5 border rounded font-mono text-[10px]">Ctrl+S</kbd>
-              </div>
-              <div className="flex justify-between">
-                <span>Ejecutar prompt</span>
-                <kbd className="bg-muted px-1.5 py-0.5 border rounded font-mono text-[10px]">Ctrl+Enter</kbd>
-              </div>
-              <div className="flex justify-between">
-                <span>Insertar variable</span>
-                <kbd className="bg-muted px-1.5 py-0.5 border rounded font-mono text-[10px]">Ctrl+I</kbd>
-              </div>
-            </div>
-          </div>
-        </PopoverContent>
-      </Popover>
     </div>
   );
 }

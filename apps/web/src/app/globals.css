@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -9,7 +10,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-space-grotesk);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -46,6 +47,24 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Prompt Studio custom tokens */
+  --color-ps-bg-deep: var(--ps-bg-deep);
+  --color-ps-bg-base: var(--ps-bg-base);
+  --color-ps-bg-surface: var(--ps-bg-surface);
+  --color-ps-bg-elevated: var(--ps-bg-elevated);
+  --color-ps-accent: var(--ps-accent);
+  --color-ps-accent-light: var(--ps-accent-light);
+  --color-ps-accent-dark: var(--ps-accent-dark);
+  --color-ps-text-primary: var(--ps-text-primary);
+  --color-ps-text-secondary: var(--ps-text-secondary);
+  --color-ps-text-muted: var(--ps-text-muted);
+  --color-ps-border: var(--ps-border);
+  --color-ps-border-subtle: var(--ps-border-subtle);
+  --color-ps-success: var(--ps-success);
+  --color-ps-error: var(--ps-error);
+  --color-ps-variable: var(--ps-variable);
+  --color-ps-comment: var(--ps-comment);
 }
 
 :root {
@@ -81,40 +100,77 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Prompt Studio light tokens */
+  --ps-bg-deep: #f8fafc;
+  --ps-bg-base: #ffffff;
+  --ps-bg-surface: #f1f5f9;
+  --ps-bg-elevated: #e2e8f0;
+  --ps-accent: #6366f1;
+  --ps-accent-light: #818cf8;
+  --ps-accent-dark: #4f46e5;
+  --ps-text-primary: #0f172a;
+  --ps-text-secondary: #64748b;
+  --ps-text-muted: #94a3b8;
+  --ps-border: #e2e8f0;
+  --ps-border-subtle: #f1f5f9;
+  --ps-success: #4edea3;
+  --ps-error: #f87171;
+  --ps-variable: #a78bfa;
+  --ps-comment: #818cf8;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #060e20;
+  --foreground: #dae2fd;
+  --card: #131b2e;
+  --card-foreground: #dae2fd;
+  --popover: #131b2e;
+  --popover-foreground: #dae2fd;
+  --primary: #c0c1ff;
+  --primary-foreground: #1000a9;
+  --secondary: #2d3449;
+  --secondary-foreground: #dae2fd;
+  --muted: #171f33;
+  --muted-foreground: #464554;
+  --accent: #2d3449;
+  --accent-foreground: #dae2fd;
+  --destructive: #f87171;
+  --border: rgba(45, 52, 73, 0.3);
+  --input: rgba(70, 69, 84, 0.15);
+  --ring: #c0c1ff;
+  --chart-1: #c0c1ff;
+  --chart-2: #8083ff;
+  --chart-3: #4edea3;
+  --chart-4: #a7b6cc;
+  --chart-5: #464554;
+  --radius: 0.5rem;
+  --sidebar: #131b2e;
+  --sidebar-foreground: #dae2fd;
+  --sidebar-primary: #c0c1ff;
+  --sidebar-primary-foreground: #1000a9;
+  --sidebar-accent: #2d3449;
+  --sidebar-accent-foreground: #dae2fd;
+  --sidebar-border: rgba(45, 52, 73, 0.3);
+  --sidebar-ring: #c0c1ff;
+
+  /* Prompt Studio dark tokens — from Figma */
+  --ps-bg-deep: #060e20;
+  --ps-bg-base: #0b1326;
+  --ps-bg-surface: #131b2e;
+  --ps-bg-elevated: #171f33;
+  --ps-accent: #c0c1ff;
+  --ps-accent-light: #dae2fd;
+  --ps-accent-dark: #8083ff;
+  --ps-text-primary: #dae2fd;
+  --ps-text-secondary: #c7c4d7;
+  --ps-text-muted: #464554;
+  --ps-border: rgba(45, 52, 73, 0.3);
+  --ps-border-subtle: rgba(70, 69, 84, 0.1);
+  --ps-success: #4edea3;
+  --ps-error: #f87171;
+  --ps-variable: #a7b6cc;
+  --ps-comment: rgba(192, 193, 255, 0.7);
 }
 
 @layer base {
@@ -127,4 +183,29 @@
   html {
     @apply font-sans;
   }
+}
+
+/* Prompt Studio gradient button */
+.ps-gradient-btn {
+  background: linear-gradient(90deg, #c0c1ff 0%, #8083ff 100%) !important;
+  background-clip: border-box !important;
+}
+
+.ps-gradient-btn:hover {
+  background: linear-gradient(90deg, #d0d1ff 0%, #9093ff 100%) !important;
+}
+
+/* Editor scrollbar styling */
+.ps-editor-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.ps-editor-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ps-editor-scroll::-webkit-scrollbar-thumb {
+  background: rgba(45, 52, 73, 0.5);
+  border-radius: 3px;
+}
+.ps-editor-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(45, 52, 73, 0.8);
 }

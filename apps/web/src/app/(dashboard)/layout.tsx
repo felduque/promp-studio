@@ -4,7 +4,6 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { AppSidebar } from '@/components/layout/app-sidebar';
-import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 
 export default function DashboardLayout({
   children,
@@ -26,8 +25,8 @@ export default function DashboardLayout({
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      <div className="flex h-screen items-center justify-center bg-[#060e20]">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#c0c1ff] border-t-transparent" />
       </div>
     );
   }
@@ -35,9 +34,9 @@ export default function DashboardLayout({
   if (!isAuthenticated) return null;
 
   return (
-    <SidebarProvider>
+    <div className="flex h-screen overflow-hidden bg-[#0b1326] text-[#dae2fd]">
       <AppSidebar />
-      <SidebarInset>{children}</SidebarInset>
-    </SidebarProvider>
+      <main className="flex-1 overflow-hidden">{children}</main>
+    </div>
   );
 }

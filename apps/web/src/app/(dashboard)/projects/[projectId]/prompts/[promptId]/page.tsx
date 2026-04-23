@@ -9,9 +9,7 @@ import { VariablesPanel } from '@/components/editor/variables-panel';
 import { PromptPreview } from '@/components/editor/prompt-preview';
 import { ExecutionPanel } from '@/components/editor/execution-panel';
 import { VersionDiff } from '@/components/editor/version-diff';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -20,18 +18,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  ArrowLeft,
-  Save,
-  GitBranch,
-  GitCompareArrows,
-  Eye,
-  Variable,
-  Clock,
-  Play,
-} from 'lucide-react';
+import { toast } from 'sonner';
+import { Save } from 'lucide-react';
 
 interface PromptData {
   id: string;
@@ -53,6 +42,16 @@ interface VersionData {
   createdAt: string;
   author?: { name: string };
 }
+
+const TABS = [
+  { id: 'variables', label: 'VARIABLES' },
+  { id: 'preview', label: 'PREVIEW' },
+  { id: 'history', label: 'HISTORIAL' },
+  { id: 'diff', label: 'DIFF' },
+  { id: 'execute', label: 'EJECUTAR' },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
 
 export default function PromptEditorPage() {
   const params = useParams();
@@ -77,7 +76,7 @@ export default function PromptEditorPage() {
   const [saving, setSaving] = useState(false);
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
-  const [activeTab, setActiveTab] = useState('variables');
+  const [activeTab, setActiveTab] = useState<TabId>('execute');
 
   const fetchPrompt = useCallback(async () => {
     try {
@@ -101,9 +100,7 @@ export default function PromptEditorPage() {
   }, [promptId, projectId, router, setContent, setVariables, setMessages, resetDirty]);
 
   useEffect(() => {
-    // Reset loading state immediately when promptId changes
     setLoading(true);
-    // Clear store content immediately to avoid showing previous prompt
     setContent('');
     setVariables([]);
     setMessages([]);
@@ -139,12 +136,14 @@ export default function PromptEditorPage() {
         messages,
         commitMessage,
       });
+      toast.success(`Versión guardada: ${commitMessage}`);
       setCommitMessage('');
       setCommitDialogOpen(false);
       resetDirty();
       fetchPrompt();
     } catch (err) {
       console.error('Error saving version:', err);
+      toast.error('Error al guardar la versión');
     } finally {
       setSaving(false);
     }
@@ -152,8 +151,8 @@ export default function PromptEditorPage() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="border-4 border-primary border-t-transparent rounded-full w-8 h-8 animate-spin" />
+      <div className="flex justify-center items-center h-screen bg-ps-bg-base">
+        <div className="border-4 border-ps-accent border-t-transparent rounded-full w-8 h-8 animate-spin" />
       </div>
     );
   }
@@ -165,101 +164,138 @@ export default function PromptEditorPage() {
   )[0];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-1px)]">
+    <div className="flex flex-col h-full bg-ps-bg-base">
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-2 px-3 sm:px-4 py-2 border-b">
-        <div className="flex flex-1 items-center gap-2 min-w-0">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => router.push(`/projects/${projectId}`)}
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <div className="min-w-0">
-            <h1 className="font-semibold text-sm sm:text-lg truncate">{prompt.name}</h1>
-            <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
-              {currentVersion && (
-                <>
-                  <Badge variant="outline" className="px-1.5 text-[10px]">
-                    v{currentVersion.versionNumber}
-                  </Badge>
-                  {currentVersion.tag && (
-                    <Badge className="hidden sm:inline-flex px-1.5 text-[10px]">{currentVersion.tag}</Badge>
-                  )}
-                  <span className="hidden sm:flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {new Date(currentVersion.createdAt).toLocaleString('es')}
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {isDirty && (
-            <Badge variant="secondary" className="text-[10px] animate-pulse">
-              Sin guardar
-            </Badge>
+      <header className="flex items-center justify-between px-8 py-5 bg-[#060e20] shrink-0 z-10">
+        <div className="flex items-center gap-4">
+          <h1 className="font-[var(--font-space-grotesk)] font-bold text-[#dae2fd] text-2xl tracking-tight">
+            {prompt.name}
+          </h1>
+          {currentVersion && (
+            <span className="bg-[#39485a] text-[#a7b6cc] px-2 py-0.5 rounded text-xs font-bold font-[var(--font-geist-mono)] uppercase tracking-wider">
+              V{currentVersion.versionNumber}
+            </span>
           )}
-          <Button
-            size="sm"
+          <span className="font-[var(--font-geist-mono)] text-sm text-[#464554] ml-2">
+            {currentVersion
+              ? `Edited ${getTimeAgo(currentVersion.createdAt)}`
+              : 'New prompt'}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-4">
+          {isDirty && (
+            <button
+              className="text-[#c0c1ff] hover:bg-[#2d3449]/30 px-4 py-2 rounded text-sm transition-colors"
+              onClick={() => {
+                if (currentVersion) {
+                  setContent(currentVersion.content || '');
+                  if (currentVersion.variables?.length) setVariables(currentVersion.variables);
+                  if (currentVersion.messages?.length) setMessages(currentVersion.messages);
+                  resetDirty();
+                }
+              }}
+            >
+              Discard Changes
+            </button>
+          )}
+          <button
+            className="bg-gradient-to-r from-[#c0c1ff] to-[#8083ff] text-[#1000a9] font-bold rounded px-6 py-2 shadow-[0_4px_14px_rgba(192,193,255,0.2)] hover:shadow-[0_6px_20px_rgba(192,193,255,0.3)] transition-all flex items-center gap-2 relative overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => isDirty && setCommitDialogOpen(true)}
             disabled={!isDirty}
-            onClick={() => setCommitDialogOpen(true)}
           >
-            <Save className="sm:mr-1 w-4 h-4" />
-            <span className="hidden sm:inline">Guardar versión</span>
-          </Button>
+            <div className="absolute top-0 left-0 w-full h-[1px] bg-white/40" />
+            <Save className="w-4 h-4" />
+            Save Version
+          </button>
         </div>
-      </div>
+      </header>
 
-      {/* Main content — vertical on mobile, horizontal on lg+ */}
-      <div className="flex lg:flex-row flex-col flex-1 overflow-hidden">
-        {/* Editor */}
-        <div className="flex flex-col flex-1 min-w-0 min-h-0">
-          <div className="flex-1 p-2 sm:p-4 min-h-62.5 lg:min-h-0">
-            <PromptEditor />
+      {/* Main Content */}
+      <div className="flex flex-1 overflow-hidden gap-6 p-6">
+        {/* Editor Area — flex-[6.5] like Stitch */}
+        <div className="flex-[6.5] min-w-0 min-h-0">
+          <PromptEditor />
+        </div>
+
+        {/* Right Panel — flex-[3.5] like Stitch */}
+        <section className="flex-[3.5] flex flex-col bg-[#131b2e] rounded-xl overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.15)] relative">
+          {/* Gradient overlay */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[rgba(192,193,255,0.05)] to-transparent pointer-events-none" />
+
+          {/* Tabs */}
+          <div className="flex bg-[#2d3449]/80 backdrop-blur-xl overflow-x-auto border-b border-[#2d3449]/50 relative z-10">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-5 py-4 text-xs uppercase tracking-widest whitespace-nowrap transition-colors ${
+                  activeTab === tab.id
+                    ? 'text-[#c0c1ff] border-b-2 border-[#c0c1ff] bg-[#2d3449]/50 font-bold'
+                    : 'text-[#c7c4d7] hover:text-[#dae2fd]'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-        </div>
 
-        {/* Right / Bottom panel */}
-        <div className="flex flex-col border-t lg:border-t-0 lg:border-l w-full lg:w-85 xl:w-95 h-[50vh] sm:h-[55vh] lg:h-full min-h-0 shrink-0">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
-            <TabsList className="grid grid-cols-5 mx-2 mt-2">
-              <TabsTrigger value="variables" className="gap-1 text-xs">
-                <Variable className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Variables</span>
-              </TabsTrigger>
-              <TabsTrigger value="preview" className="gap-1 text-xs">
-                <Eye className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Preview</span>
-              </TabsTrigger>
-              <TabsTrigger value="history" className="gap-1 text-xs">
-                <GitBranch className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Historial</span>
-              </TabsTrigger>
-              <TabsTrigger value="diff" className="gap-1 text-xs">
-                <GitCompareArrows className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Diff</span>
-              </TabsTrigger>
-              <TabsTrigger value="execute" className="gap-1 text-xs">
-                <Play className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Ejecutar</span>
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="variables" className="flex-1 mt-0 overflow-hidden">
-              <ScrollArea className="p-3 h-full">
+          {/* Tab Content */}
+          <div className="flex-1 overflow-hidden relative z-10">
+            {activeTab === 'variables' && (
+              <ScrollArea className="h-full p-6">
                 <VariablesPanel />
               </ScrollArea>
-            </TabsContent>
-
-            <TabsContent value="preview" className="flex-1 mt-0 overflow-hidden">
+            )}
+            {activeTab === 'preview' && (
               <PromptPreview />
-            </TabsContent>
-
-            <TabsContent value="execute" className="flex-1 mt-0 overflow-hidden">
+            )}
+            {activeTab === 'history' && (
+              <ScrollArea className="h-full p-6">
+                <div className="space-y-3">
+                  {prompt.versions
+                    ?.sort((a, b) => b.versionNumber - a.versionNumber)
+                    .map((version) => (
+                      <button
+                        key={version.id}
+                        className="w-full text-left p-4 rounded-xl bg-[#171f33] hover:bg-[#2d3449]/30 border border-[rgba(70,69,84,0.15)] transition-all"
+                        onClick={() => {
+                          setContent(version.content);
+                          if (version.variables?.length) setVariables(version.variables);
+                          if (version.messages?.length) setMessages(version.messages);
+                        }}
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="font-[var(--font-geist-mono)] text-xs text-[#c0c1ff] bg-[#060e20] px-2 py-0.5 rounded">
+                            v{version.versionNumber}
+                          </span>
+                          {version.tag && (
+                            <span className="text-xs text-[#8083ff] bg-[#c0c1ff]/20 px-2 py-0.5 rounded">
+                              {version.tag}
+                            </span>
+                          )}
+                        </div>
+                        {version.commitMessage && (
+                          <p className="mt-2 text-sm text-[#dae2fd]">{version.commitMessage}</p>
+                        )}
+                        <p className="mt-1 text-xs text-[#464554]">
+                          {new Date(version.createdAt).toLocaleString('es')}
+                          {version.author && ` · ${version.author.name}`}
+                        </p>
+                      </button>
+                    ))}
+                  {(!prompt.versions || prompt.versions.length === 0) && (
+                    <p className="py-8 text-[#c7c4d7] text-sm text-center">
+                      Sin versiones aún. Guarda tu primera versión.
+                    </p>
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+            {activeTab === 'diff' && (
+              <VersionDiff versions={prompt.versions ?? []} />
+            )}
+            {activeTab === 'execute' && (
               <ExecutionPanel
                 promptId={prompt.id}
                 promptVersionId={prompt.currentVersionId}
@@ -270,64 +306,17 @@ export default function PromptEditorPage() {
                 currentMessages={messages}
                 onSaveAndExecute={() => setCommitDialogOpen(true)}
               />
-            </TabsContent>
-
-            <TabsContent value="history" className="flex-1 mt-0 overflow-hidden">
-              <ScrollArea className="p-3 h-full">
-                <div className="space-y-3">
-                  {prompt.versions
-                    ?.sort((a, b) => b.versionNumber - a.versionNumber)
-                    .map((version) => (
-                      <button
-                        key={version.id}
-                        className="p-3 border hover:border-primary/50 rounded-lg w-full text-left transition-colors"
-                        onClick={() => {
-                          setContent(version.content);
-                          if (version.variables?.length)
-                            setVariables(version.variables);
-                          if (version.messages?.length)
-                            setMessages(version.messages);
-                        }}
-                      >
-                        <div className="flex justify-between items-center">
-                          <Badge variant="outline" className="text-xs">
-                            v{version.versionNumber}
-                          </Badge>
-                          {version.tag && (
-                            <Badge className="text-xs">{version.tag}</Badge>
-                          )}
-                        </div>
-                        {version.commitMessage && (
-                          <p className="mt-1 text-sm">{version.commitMessage}</p>
-                        )}
-                        <p className="mt-1 text-muted-foreground text-xs">
-                          {new Date(version.createdAt).toLocaleString('es')}
-                          {version.author && ` · ${version.author.name}`}
-                        </p>
-                      </button>
-                    ))}
-                  {(!prompt.versions || prompt.versions.length === 0) && (
-                    <p className="py-8 text-muted-foreground text-sm text-center">
-                      Sin versiones aún. Guarda tu primera versión.
-                    </p>
-                  )}
-                </div>
-              </ScrollArea>
-            </TabsContent>
-
-            <TabsContent value="diff" className="flex-1 mt-0 overflow-hidden">
-              <VersionDiff versions={prompt.versions ?? []} />
-            </TabsContent>
-          </Tabs>
-        </div>
+            )}
+          </div>
+        </section>
       </div>
 
       {/* Save dialog */}
       <Dialog open={commitDialogOpen} onOpenChange={setCommitDialogOpen}>
-        <DialogContent>
+        <DialogContent className="bg-[#131b2e] border-[rgba(70,69,84,0.15)]">
           <DialogHeader>
-            <DialogTitle>Guardar nueva versión</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-[#dae2fd]">Guardar nueva versión</DialogTitle>
+            <DialogDescription className="text-[#c7c4d7]">
               Describe los cambios en esta versión del prompt.
             </DialogDescription>
           </DialogHeader>
@@ -336,20 +325,39 @@ export default function PromptEditorPage() {
             value={commitMessage}
             onChange={(e) => setCommitMessage(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+            className="bg-[#060e20] border-[rgba(70,69,84,0.3)] text-[#dae2fd] placeholder-[#908fa0] focus:border-[#c0c1ff] focus:ring-1 focus:ring-[#c0c1ff]"
           />
           <DialogFooter>
-            <Button
-              variant="outline"
+            <button
+              className="text-[#c7c4d7] hover:text-[#dae2fd] hover:bg-[#2d3449]/30 px-4 py-2 rounded text-sm transition-colors"
               onClick={() => setCommitDialogOpen(false)}
             >
               Cancelar
-            </Button>
-            <Button onClick={handleSave} disabled={saving || !commitMessage.trim()}>
+            </button>
+            <button
+              className="bg-gradient-to-r from-[#c0c1ff] to-[#8083ff] text-[#1000a9] font-bold rounded px-6 py-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]"
+              onClick={handleSave}
+              disabled={saving || !commitMessage.trim()}
+            >
               {saving ? 'Guardando...' : `Guardar v${(currentVersion?.versionNumber || 0) + 1}`}
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   );
+}
+
+function getTimeAgo(dateStr: string): string {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${diffDays}d ago`;
 }

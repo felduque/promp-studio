@@ -67,10 +67,18 @@ export class ModelOrchestratorService {
     );
 
     const data = response.data;
+    const output = data.choices?.[0]?.message?.content || '';
+    const tokensIn = data.usage?.prompt_tokens || 0;
+    const tokensOut = data.usage?.completion_tokens || 0;
+
+    if (!output && tokensOut === 0) {
+      throw new Error(`El modelo ${request.model.externalId} devolvió una respuesta vacía.`);
+    }
+
     return {
-      output: data.choices?.[0]?.message?.content || '',
-      tokensIn: data.usage?.prompt_tokens || 0,
-      tokensOut: data.usage?.completion_tokens || 0,
+      output,
+      tokensIn,
+      tokensOut,
       latencyMs: Date.now() - startTime,
       rawResponse: data,
     };
@@ -166,10 +174,27 @@ export class ModelOrchestratorService {
     );
 
     const data = response.data;
+
+    // Check for OpenRouter error in response body
+    if (data.error) {
+      throw new Error(data.error.message || `OpenRouter error: ${JSON.stringify(data.error)}`);
+    }
+
+    const output = data.choices?.[0]?.message?.content || '';
+    const tokensIn = data.usage?.prompt_tokens || 0;
+    const tokensOut = data.usage?.completion_tokens || 0;
+
+    // Warn if model returned empty response
+    if (!output && tokensOut === 0) {
+      throw new Error(
+        `El modelo ${request.model.externalId} devolvió una respuesta vacía. Puede que no soporte este tipo de prompt o esté temporalmente no disponible.`,
+      );
+    }
+
     return {
-      output: data.choices?.[0]?.message?.content || '',
-      tokensIn: data.usage?.prompt_tokens || 0,
-      tokensOut: data.usage?.completion_tokens || 0,
+      output,
+      tokensIn,
+      tokensOut,
       latencyMs: Date.now() - startTime,
       rawResponse: data,
     };

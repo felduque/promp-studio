@@ -9,6 +9,11 @@ import { PromptsModule } from './prompts/prompts.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { ExecutionsModule } from './executions/executions.module';
 import { ModelOrchestratorModule } from './model-orchestrator/model-orchestrator.module';
+import { EvaluationsModule } from './evaluations/evaluations.module';
+import { TestCasesModule } from './test-cases/test-cases.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { UserPreferencesModule } from './user-preferences/user-preferences.module';
+import { FavoriteModelsModule } from './favorite-models/favorite-models.module';
 
 @Module({
   imports: [
@@ -36,6 +41,11 @@ import { ModelOrchestratorModule } from './model-orchestrator/model-orchestrator
     ApiKeysModule,
     ExecutionsModule,
     ModelOrchestratorModule,
+    EvaluationsModule,
+    TestCasesModule,
+    AnalyticsModule,
+    UserPreferencesModule,
+    FavoriteModelsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -94,6 +94,35 @@ export class AuthService {
     return this.sanitizeUser(user);
   }
 
+  async updateProfile(userId: string, dto: { name?: string; email?: string; avatar?: string }) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('Usuario no encontrado');
+
+    if (dto.email && dto.email !== user.email) {
+      const existing = await this.userRepository.findOne({ where: { email: dto.email } });
+      if (existing) throw new ConflictException('El email ya está en uso');
+    }
+
+    if (dto.name !== undefined) user.name = dto.name;
+    if (dto.email !== undefined) user.email = dto.email;
+    if (dto.avatar !== undefined) user.avatar = dto.avatar;
+
+    await this.userRepository.save(user);
+    return this.sanitizeUser(user);
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('Usuario no encontrado');
+
+    const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isValid) throw new UnauthorizedException('Contraseña actual incorrecta');
+
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.userRepository.save(user);
+    return { message: 'Contraseña actualizada' };
+  }
+
   private async generateTokens(user: User) {
     const payload = { sub: user.id, email: user.email };
 

@@ -43,4 +43,4 @@ export interface ExecutionPanelProps {
   onSaveAndExecute?: () => void;
 }
 
-export type ModelFilter = 'all' | 'selected' | 'free';
+export type ModelFilter = 'all' | 'selected' | 'free' | 'favorites';

@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Verify Build on Stop",
+  "description": "When the agent finishes working, automatically type-check the API (npx tsc --noEmit in apps/api) and build the frontend (npm run build in apps/web) to catch any compilation errors before presenting the final response.",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Before finishing, verify that both projects compile: 1) Run `npx tsc --noEmit` in apps/api to type-check the backend. 2) Run `npm run build` in apps/web to build the frontend. If either fails, fix the errors and re-verify. Only confirm completion once both pass."
+  }
+}

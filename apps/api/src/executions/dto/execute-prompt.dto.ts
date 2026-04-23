@@ -16,6 +16,11 @@ export class ExecutePromptDto {
   @IsString()
   model: string;
 
+  @ApiProperty({ example: 'prompt', enum: ['prompt', 'chat'], required: false })
+  @IsString()
+  @IsOptional()
+  source?: 'prompt' | 'chat';
+
   @ApiProperty({ example: { nombre: 'Juan', tema: 'IA' }, required: false })
   @IsObject()
   @IsOptional()
@@ -53,6 +58,11 @@ export class PreviewExecuteDto {
   @IsString()
   model: string;
 
+  @ApiProperty({ example: 'chat', enum: ['prompt', 'chat'], required: false })
+  @IsString()
+  @IsOptional()
+  source?: 'prompt' | 'chat';
+
   @ApiProperty({ example: 'Contenido del prompt para modo template', required: false })
   @IsString()
   @IsOptional()
@@ -82,4 +92,46 @@ export class PreviewExecuteDto {
   @IsNumber()
   @IsOptional()
   topP?: number;
+}
+
+export class StreamExecuteDto {
+  @ApiProperty({ example: ['gpt-4o', 'claude-3-sonnet'], description: 'Models to execute against' })
+  @IsArray()
+  @IsString({ each: true })
+  models: string[];
+
+  @ApiProperty({ example: 'uuid-version', required: false })
+  @IsString()
+  @IsOptional()
+  promptVersionId?: string;
+
+  @ApiProperty({ example: 'prompt', enum: ['prompt', 'chat'], required: false })
+  @IsString()
+  @IsOptional()
+  source?: 'prompt' | 'chat';
+
+  @ApiProperty({ example: 'Contenido del prompt', required: false })
+  @IsString()
+  @IsOptional()
+  content?: string;
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsOptional()
+  messages?: PreviewMessage[];
+
+  @ApiProperty({ required: false })
+  @IsObject()
+  @IsOptional()
+  variables?: Record<string, string>;
+
+  @ApiProperty({ example: 0.7, required: false })
+  @IsNumber()
+  @IsOptional()
+  temperature?: number;
+
+  @ApiProperty({ example: 1024, required: false })
+  @IsNumber()
+  @IsOptional()
+  maxTokens?: number;
 }
