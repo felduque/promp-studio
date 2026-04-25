@@ -12,7 +12,8 @@ export function useExecutionPanel(
   isDirty?: boolean,
   editorMode?: 'template' | 'chat',
   currentContent?: string,
-  currentMessages?: PromptMessage[]
+  currentMessages?: PromptMessage[],
+  onExecutingChange?: (executing: boolean) => void,
 ) {
   const { variables, resolveTemplate } = usePromptStore();
 
@@ -111,6 +112,7 @@ export function useExecutionPanel(
     if (!actuallyUsePreview && !promptVersionId) return;
     
     setExecuting(true);
+    onExecutingChange?.(true);
     setResults([]);
 
     const variablesMap: Record<string, string> = {};
@@ -226,6 +228,7 @@ export function useExecutionPanel(
       ]);
     } finally {
       setExecuting(false);
+      onExecutingChange?.(false);
     }
   }, [
     promptVersionId,

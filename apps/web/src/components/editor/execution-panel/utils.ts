@@ -25,9 +25,12 @@ export const removeFavorite = async (modelId: string): Promise<void> => {
 export const formatPrice = (price: number | string): string => {
   const num = Number(price);
   if (num === 0) return 'Free';
-  if (num < 0.001) return '< $0.001/M';
-  if (num < 0.01) return `${num.toFixed(3)}/M`;
-  return `${num.toFixed(2)}/M`;
+  // Price is per token — convert to per million tokens for display
+  const perMillion = num * 1_000_000;
+  if (perMillion < 0.01) return `$${perMillion.toFixed(4)}/M`;
+  if (perMillion < 0.1) return `$${perMillion.toFixed(3)}/M`;
+  if (perMillion < 1) return `$${perMillion.toFixed(2)}/M`;
+  return `$${perMillion.toFixed(2)}/M`;
 };
 
 export const isFreeModel = (model: CatalogModel): boolean => {

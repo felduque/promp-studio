@@ -41,6 +41,7 @@ export interface ExecutionPanelProps {
   currentContent?: string;
   currentMessages?: PromptMessage[];
   onSaveAndExecute?: () => void;
+  onExecutingChange?: (executing: boolean) => void;
 }
 
 export type ModelFilter = 'all' | 'selected' | 'free' | 'favorites';

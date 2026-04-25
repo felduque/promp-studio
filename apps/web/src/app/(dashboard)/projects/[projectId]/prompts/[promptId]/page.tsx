@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
-import { Save } from 'lucide-react';
+import { Save, Loader2 } from 'lucide-react';
 
 interface PromptData {
   id: string;
@@ -77,6 +77,7 @@ export default function PromptEditorPage() {
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [activeTab, setActiveTab] = useState<TabId>('execute');
+  const [isExecuting, setIsExecuting] = useState(false);
 
   const fetchPrompt = useCallback(async () => {
     try {
@@ -228,14 +229,22 @@ export default function PromptEditorPage() {
             {TABS.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => !isExecuting && setActiveTab(tab.id)}
+                disabled={isExecuting && tab.id !== 'execute'}
                 className={`px-5 py-4 text-xs uppercase tracking-widest whitespace-nowrap transition-colors ${
                   activeTab === tab.id
                     ? 'text-[#c0c1ff] border-b-2 border-[#c0c1ff] bg-[#2d3449]/50 font-bold'
+                    : isExecuting && tab.id !== 'execute'
+                    ? 'text-[#464554] cursor-not-allowed'
                     : 'text-[#c7c4d7] hover:text-[#dae2fd]'
                 }`}
               >
-                {tab.label}
+                {tab.id === 'execute' && isExecuting ? (
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    {tab.label}
+                  </span>
+                ) : tab.label}
               </button>
             ))}
           </div>
@@ -295,7 +304,8 @@ export default function PromptEditorPage() {
             {activeTab === 'diff' && (
               <VersionDiff versions={prompt.versions ?? []} />
             )}
-            {activeTab === 'execute' && (
+            {/* ExecutionPanel always mounted to preserve state during execution */}
+            <div className={activeTab === 'execute' ? 'h-full' : 'hidden'}>
               <ExecutionPanel
                 promptId={prompt.id}
                 promptVersionId={prompt.currentVersionId}
@@ -305,8 +315,9 @@ export default function PromptEditorPage() {
                 currentContent={content}
                 currentMessages={messages}
                 onSaveAndExecute={() => setCommitDialogOpen(true)}
+                onExecutingChange={setIsExecuting}
               />
-            )}
+            </div>
           </div>
         </section>
       </div>

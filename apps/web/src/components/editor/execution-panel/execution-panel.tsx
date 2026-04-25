@@ -17,6 +17,7 @@ export function ExecutionPanel({
   currentContent,
   currentMessages,
   onSaveAndExecute,
+  onExecutingChange,
 }: ExecutionPanelProps) {
   const {
     providers,
@@ -40,7 +41,7 @@ export function ExecutionPanel({
     removeUnavailableModel,
     handleExecute,
     copyResult,
-  } = useExecutionPanel(promptId, promptVersionId, defaultModel, isDirty, editorMode, currentContent, currentMessages);
+  } = useExecutionPanel(promptId, promptVersionId, defaultModel, isDirty, editorMode, currentContent, currentMessages, onExecutingChange);
 
   const hasAvailableSelection =
     selectedModels.length > unavailableSelectedModels.length;
