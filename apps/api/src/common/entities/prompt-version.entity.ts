@@ -44,20 +44,20 @@ export class PromptVersion {
   }[];
 
   @Column({ nullable: true })
-  parentVersionId: string;
+  parentVersionId: string | null;
 
   @Column({ nullable: true })
-  commitMessage: string;
+  commitMessage: string | null;
 
   @Column({ nullable: true })
-  authorId: string;
+  authorId: string | null;
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'authorId' })
   author: User;
 
   @Column({ nullable: true })
-  tag: string;
+  tag: string | null;
 
   @OneToMany(() => Execution, (execution) => execution.promptVersion)
   executions: Execution[];

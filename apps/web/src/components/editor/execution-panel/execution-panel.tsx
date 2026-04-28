@@ -11,6 +11,7 @@ import { ResultsPanel } from './results-panel';
 export function ExecutionPanel({
   promptId,
   promptVersionId,
+  chatVersionId,
   defaultModel,
   isDirty,
   editorMode,
@@ -41,10 +42,19 @@ export function ExecutionPanel({
     removeUnavailableModel,
     handleExecute,
     copyResult,
-  } = useExecutionPanel(promptId, promptVersionId, defaultModel, isDirty, editorMode, currentContent, currentMessages, onExecutingChange);
+  } = useExecutionPanel(
+    promptId,
+    promptVersionId,
+    chatVersionId,
+    defaultModel,
+    isDirty,
+    editorMode,
+    currentContent,
+    currentMessages,
+    onExecutingChange,
+  );
 
-  const hasAvailableSelection =
-    selectedModels.length > unavailableSelectedModels.length;
+  const hasAvailableSelection = selectedModels.length > unavailableSelectedModels.length;
 
   const hasResults = results.length > 0;
 
@@ -62,8 +72,18 @@ export function ExecutionPanel({
         {/* Model Selection */}
         <div className="px-6 py-4 border-b border-[rgba(70,69,84,0.1)]">
           <div className="flex items-center gap-2 mb-3">
-            <svg className="w-3 h-3 text-[#c7c4d7]" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M7 1L13 4V10L7 13L1 10V4L7 1Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+            <svg
+              className="w-3 h-3 text-[#c7c4d7]"
+              viewBox="0 0 14 14"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M7 1L13 4V10L7 13L1 10V4L7 1Z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
             </svg>
             <span className="text-xs uppercase tracking-[0.05em] text-[#c7c4d7]">
               Model Selection
@@ -114,7 +134,7 @@ export function ExecutionPanel({
           disabled={!hasAvailableSelection}
           selectedCount={selectedModels.length}
           isDirty={isDirty}
-          hasSavedVersion={!!promptVersionId}
+          hasSavedVersion={!!(editorMode === 'chat' ? chatVersionId : promptVersionId)}
           onExecutePreview={() => handleExecute(true)}
           onExecuteSaved={() => handleExecute(false)}
           onSaveAndExecute={onSaveAndExecute}

@@ -6,8 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { Eye } from 'lucide-react';
 
 export function PromptPreview() {
-  const { resolveTemplate, variables } = usePromptStore();
+  const { resolveTemplate, variables, editorMode, messages } = usePromptStore();
   const resolved = resolveTemplate();
+  const chatPreview = messages.filter((message) => message.content.trim().length > 0);
 
   const hasUnresolved = resolved.includes('{{');
 
@@ -23,10 +24,21 @@ export function PromptPreview() {
         )}
       </div>
       <ScrollArea className="flex-1 p-4">
-        {resolved ? (
-          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">
-            {resolved}
-          </pre>
+        {editorMode === 'chat' && chatPreview.length > 0 ? (
+          <div className="space-y-3">
+            {chatPreview.map((message, index) => (
+              <div key={`${message.role}-${index}`} className="rounded border bg-muted/20 p-3">
+                <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+                  {message.role}
+                </div>
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">
+                  {message.content}
+                </pre>
+              </div>
+            ))}
+          </div>
+        ) : resolved ? (
+          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{resolved}</pre>
         ) : (
           <p className="text-sm text-muted-foreground italic">
             Escribe algo en el editor para ver el preview...

@@ -10,6 +10,7 @@ import {
 import { PromptVersion } from './prompt-version.entity';
 import { User } from './user.entity';
 import { ExecutionGroup } from './execution-group.entity';
+import { ChatVersion } from './chat-version.entity';
 
 export type ExecutionSource = 'prompt' | 'chat';
 
@@ -21,15 +22,28 @@ export class Execution {
   @Column({ nullable: true })
   promptVersionId: string | null;
 
-  @ManyToOne(() => PromptVersion, (version) => version.executions, { onDelete: 'SET NULL', nullable: true })
+  @ManyToOne(() => PromptVersion, (version) => version.executions, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
   @JoinColumn({ name: 'promptVersionId' })
   promptVersion: PromptVersion;
+
+  @Column({ nullable: true })
+  chatVersionId: string | null;
+
+  @ManyToOne(() => ChatVersion, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'chatVersionId' })
+  chatVersion: ChatVersion | null;
 
   @Column({ type: 'uuid', nullable: true })
   @Index()
   groupId: string | null;
 
-  @ManyToOne(() => ExecutionGroup, (g) => g.executions, { onDelete: 'SET NULL', nullable: true })
+  @ManyToOne(() => ExecutionGroup, (g) => g.executions, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
   @JoinColumn({ name: 'groupId' })
   group: ExecutionGroup;
 

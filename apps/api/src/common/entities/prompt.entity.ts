@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Project } from './project.entity';
 import { PromptVersion } from './prompt-version.entity';
+import { ChatVersion } from './chat-version.entity';
 
 @Entity('prompts')
 export class Prompt {
@@ -22,18 +23,26 @@ export class Prompt {
   @Column()
   projectId: string;
 
-  @ManyToOne(() => Project, (project) => project.prompts, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Project, (project) => project.prompts, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'projectId' })
   project: Project;
 
   @Column({ nullable: true })
-  currentVersionId: string;
+  currentVersionId: string | null;
 
   @Column({ nullable: true })
-  defaultModel: string;
+  currentChatVersionId: string | null;
+
+  @Column({ nullable: true })
+  defaultModel: string | null;
 
   @OneToMany(() => PromptVersion, (version) => version.prompt)
   versions: PromptVersion[];
+
+  @OneToMany(() => ChatVersion, (version) => version.prompt)
+  chatVersions: ChatVersion[];
 
   @CreateDateColumn()
   createdAt: Date;

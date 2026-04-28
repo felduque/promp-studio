@@ -1,15 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { usePromptStore } from '@/lib/stores/prompt-store';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { apiClient } from '@/lib/api-client';
+import { usePromptStore, type PromptMessage } from '@/lib/stores/prompt-store';
+import type { ChatTemplateData, PromptTemplateData } from '@/lib/types/studio';
 import { insertTextAtCursor } from '@/lib/editor-ref';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,46 +17,77 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Braces, FileCode } from 'lucide-react';
+import { Braces, FileCode, Save } from 'lucide-react';
+import { toast } from 'sonner';
 import { PromptExport } from './prompt-export';
 
-const PROMPT_TEMPLATES = [
-  {
-    name: 'Chain of Thought',
-    icon: '🧠',
-    content: `You are a helpful assistant. Let's think step by step.\n\nProblem: {{problem}}\n\n1. First, analyze the core question.\n2. Break it into sub-problems.\n3. Solve each sub-problem.\n4. Synthesize the final answer.`,
-  },
-  {
-    name: 'Few-Shot',
-    icon: '📝',
-    content: `Given the following examples, process the new input accordingly.\n\nExample 1:\nInput: {{example1_input}}\nOutput: {{example1_output}}\n\nNow process:\nInput: {{input}}\nOutput:`,
-  },
-  {
-    name: 'Role Play',
-    icon: '🎭',
-    content: `You are {{role}}, an expert in {{domain}}.\n\nYour task is to {{task}}.\n\nGuidelines:\n- {{guideline1}}\n- {{guideline2}}\n\nContext: {{context}}`,
-  },
-  {
-    name: 'Extractor',
-    icon: '🔍',
-    content: `Extract the following information from the text below:\n\nFields to extract:\n{{fields}}\n\nText:\n"""\n{{text}}\n"""\n\nReturn the result as a JSON object.`,
-  },
-  {
-    name: 'Traductor',
-    icon: '🌐',
-    content: `// Role Definition\nYou are a professional translator with expertise in {{source_language}} and {{target_language}}.\n\n// Context\nTranslate the following text while preserving:\n- Original tone and register ({{tone}})\n- Technical terminology and domain-specific jargon\n- Formatting, line breaks, and structure\n- Cultural nuances and idiomatic expressions\n\n// Glossary (optional)\nUse these preferred translations for key terms:\n{{glossary}}\n\n// Source Text\n"""\n{{source_text}}\n"""\n\n// Instructions\n1. Analyze the source text for context, tone, and domain.\n2. Translate naturally — avoid literal word-by-word translation.\n3. Adapt idioms and cultural references for the target audience.\n4. If a term has no direct equivalent, provide the closest match with a translator's note in [brackets].\n5. Return ONLY the translated text, no explanations.`,
-  },
-  {
-    name: 'Evaluador',
-    icon: '⚖️',
-    content: `Evaluate the following {{item_type}} based on these criteria:\n\nCriteria:\n1. {{criteria1}} (weight: {{weight1}})\n2. {{criteria2}} (weight: {{weight2}})\n3. {{criteria3}} (weight: {{weight3}})\n\nItem to evaluate:\n"""\n{{item}}\n"""\n\nProvide a score (1-10) for each criterion and an overall assessment.`,
-  },
-];
+interface EditorToolbarProps {
+  promptId: string;
+  projectId: string;
+  onImported?: (promptId?: string | null) => void;
+}
 
-export function EditorToolbar() {
-  const { variables, editorMode, setEditorMode } = usePromptStore();
+export function EditorToolbar({ promptId, projectId, onImported }: EditorToolbarProps) {
+  const {
+    variables,
+    editorMode,
+    setEditorMode,
+    content,
+    messages,
+    promptVariables,
+    chatVariables,
+    setContent,
+    setVariables,
+    setMessages,
+  } = usePromptStore();
   const [varName, setVarName] = useState('');
   const [varPopoverOpen, setVarPopoverOpen] = useState(false);
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplateData[]>([]);
+  const [chatTemplates, setChatTemplates] = useState<ChatTemplateData[]>([]);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+
+  const serializeVariables = (items: typeof promptVariables) =>
+    items.map((item) => ({
+      name: item.name,
+      type: item.type,
+      defaultValue: item.defaultValue,
+      options: item.options,
+    }));
+
+  const getErrorMessage = (error: unknown, fallback: string) => {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'response' in error &&
+      typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message ===
+        'string'
+    ) {
+      return (error as { response: { data: { message: string } } }).response.data.message;
+    }
+    return fallback;
+  };
+
+  const fetchTemplates = useCallback(async () => {
+    try {
+      const [promptResponse, chatResponse] = await Promise.all([
+        apiClient.get<PromptTemplateData[]>('/templates/prompt'),
+        apiClient.get<ChatTemplateData[]>('/templates/chat'),
+      ]);
+      setPromptTemplates(promptResponse.data);
+      setChatTemplates(chatResponse.data);
+    } catch {
+      toast.error('No se pudieron cargar los templates');
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
+
+  const activeTemplates = useMemo(
+    () => (editorMode === 'chat' ? chatTemplates : promptTemplates),
+    [chatTemplates, editorMode, promptTemplates],
+  );
 
   const handleInsertVariable = () => {
     const name = varName.trim();
@@ -72,21 +101,86 @@ export function EditorToolbar() {
     insertTextAtCursor(`{{${name}}}`);
   };
 
-  const handleInsertTemplate = (template: string) => {
-    insertTextAtCursor(template);
+  const toChatMessages = (template: ChatTemplateData): PromptMessage[] => {
+    if (template.messages.length > 0) return template.messages;
+
+    return [
+      { role: 'system', content: template.systemMessage || '' },
+      { role: 'user', content: template.userMessage || '' },
+      { role: 'assistant', content: template.assistantMessage || '' },
+    ].filter((message) => message.content.trim().length > 0) as PromptMessage[];
+  };
+
+  const handleApplyTemplate = (template: PromptTemplateData | ChatTemplateData) => {
+    if (template.type === 'prompt') {
+      setEditorMode('template');
+      setContent(template.content);
+      setVariables(template.variables || []);
+      toast.success(`Template aplicado: ${template.name}`);
+      return;
+    }
+
+    setEditorMode('chat');
+    setMessages(toChatMessages(template));
+    setVariables(template.variables || []);
+    toast.success(`Template de chat aplicado: ${template.name}`);
+  };
+
+  const handleSaveTemplate = async () => {
+    const name = window.prompt(
+      editorMode === 'chat' ? 'Nombre del template de chat' : 'Nombre del template de prompt',
+    );
+    if (!name?.trim()) return;
+
+    setSavingTemplate(true);
+    try {
+      if (editorMode === 'chat') {
+        const systemMessage =
+          messages.find((message) => message.role === 'system')?.content || null;
+        const userMessage = messages.find((message) => message.role === 'user')?.content || null;
+        const assistantMessage =
+          messages.find((message) => message.role === 'assistant')?.content || null;
+        await apiClient.post('/templates/chat', {
+          name: name.trim(),
+          systemMessage,
+          userMessage,
+          assistantMessage,
+          messages,
+          variables: serializeVariables(chatVariables),
+        });
+      } else {
+        await apiClient.post('/templates/prompt', {
+          name: name.trim(),
+          content,
+          variables: serializeVariables(promptVariables),
+          messages: [],
+        });
+      }
+      await fetchTemplates();
+      toast.success('Template guardado');
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'No se pudo guardar el template'));
+    } finally {
+      setSavingTemplate(false);
+    }
   };
 
   return (
     <div className="flex items-center justify-between bg-[#131b2e] border-b border-[#2d3449]/30 px-4 py-3">
-      {/* Left: Action buttons */}
       <div className="flex items-center gap-2">
-        {/* Variables */}
         <Popover open={varPopoverOpen} onOpenChange={setVarPopoverOpen}>
-          <PopoverTrigger render={<button className="flex items-center gap-2 px-3 py-1.5 text-[#c0c1ff] text-sm hover:bg-[#2d3449]/50 rounded transition-colors" />}>
+          <PopoverTrigger
+            render={
+              <button className="flex items-center gap-2 px-3 py-1.5 text-[#c0c1ff] text-sm hover:bg-[#2d3449]/50 rounded transition-colors" />
+            }
+          >
             <Braces className="w-3.5 h-3.5" />
             Variables
           </PopoverTrigger>
-          <PopoverContent align="start" className="p-3 w-64 bg-[#131b2e] border-[rgba(70,69,84,0.15)]">
+          <PopoverContent
+            align="start"
+            className="p-3 w-64 bg-[#131b2e] border-[rgba(70,69,84,0.15)]"
+          >
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label className="font-medium text-xs text-[#c7c4d7]">Nueva variable</label>
@@ -94,11 +188,16 @@ export function EditorToolbar() {
                   <Input
                     placeholder="nombre_variable"
                     value={varName}
-                    onChange={(e) => setVarName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleInsertVariable()}
+                    onChange={(event) => setVarName(event.target.value)}
+                    onKeyDown={(event) => event.key === 'Enter' && handleInsertVariable()}
                     className="h-7 text-xs bg-[#060e20] border-[rgba(70,69,84,0.3)] text-[#dae2fd]"
                   />
-                  <Button size="sm" variant="gradient" className="px-2 h-7 text-xs" onClick={handleInsertVariable}>
+                  <Button
+                    size="sm"
+                    variant="gradient"
+                    className="px-2 h-7 text-xs"
+                    onClick={handleInsertVariable}
+                  >
                     Insertar
                   </Button>
                 </div>
@@ -107,13 +206,13 @@ export function EditorToolbar() {
                 <div className="space-y-1.5">
                   <label className="font-medium text-[#464554] text-xs">Existentes</label>
                   <div className="flex flex-wrap gap-1">
-                    {variables.map((v) => (
+                    {variables.map((variable) => (
                       <button
-                        key={v.name}
-                        onClick={() => handleInsertExistingVar(v.name)}
+                        key={variable.name}
+                        onClick={() => handleInsertExistingVar(variable.name)}
                         className="inline-flex items-center bg-[#39485a] px-1.5 py-0.5 rounded font-[var(--font-geist-mono)] text-[#a7b6cc] text-xs hover:bg-[#39485a]/80 transition-colors"
                       >
-                        {`{{${v.name}}}`}
+                        {`{{${variable.name}}}`}
                       </button>
                     ))}
                   </div>
@@ -123,31 +222,58 @@ export function EditorToolbar() {
           </PopoverContent>
         </Popover>
 
-        {/* Templates */}
         <DropdownMenu>
-          <DropdownMenuTrigger render={<button className="flex items-center gap-2 px-3 py-1.5 text-[#c0c1ff] text-sm hover:bg-[#2d3449]/50 rounded transition-colors" />}>
+          <DropdownMenuTrigger
+            render={
+              <button className="flex items-center gap-2 px-3 py-1.5 text-[#c0c1ff] text-sm hover:bg-[#2d3449]/50 rounded transition-colors" />
+            }
+          >
             <FileCode className="w-3.5 h-3.5" />
             Templates
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56 bg-[#131b2e] border-[rgba(70,69,84,0.15)]">
+          <DropdownMenuContent
+            align="start"
+            className="w-64 bg-[#131b2e] border-[rgba(70,69,84,0.15)]"
+          >
             <DropdownMenuGroup>
-              <DropdownMenuLabel className="text-[#464554]">Plantillas</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-[#464554]">
+                {editorMode === 'chat' ? 'Templates de chat' : 'Templates de prompt'}
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {PROMPT_TEMPLATES.map((t) => (
-                <DropdownMenuItem key={t.name} onClick={() => handleInsertTemplate(t.content)} className="text-[#c7c4d7] hover:text-[#dae2fd]">
-                  <span className="mr-2">{t.icon}</span>
-                  {t.name}
+              {activeTemplates.map((template) => (
+                <DropdownMenuItem
+                  key={template.id}
+                  onClick={() => handleApplyTemplate(template)}
+                  className="text-[#c7c4d7] hover:text-[#dae2fd]"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate">{template.name}</span>
+                      <span className="text-[10px] uppercase text-[#8083ff]">
+                        {template.isSystem ? 'Sistema' : 'Propio'}
+                      </span>
+                    </div>
+                    {template.description && (
+                      <div className="text-xs text-[#464554] truncate">{template.description}</div>
+                    )}
+                  </div>
                 </DropdownMenuItem>
               ))}
+              {activeTemplates.length === 0 && (
+                <DropdownMenuItem disabled>No hay templates disponibles</DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleSaveTemplate} disabled={savingTemplate}>
+                <Save className="w-3.5 h-3.5 mr-2" />
+                Guardar actual como template
+              </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Export */}
-        <PromptExport />
+        <PromptExport promptId={promptId} projectId={projectId} onImported={onImported} />
       </div>
 
-      {/* Right: Mode Toggle — matches Stitch's segmented control */}
       <div className="bg-[#2d3449] p-1 rounded-lg flex items-center backdrop-blur-md shadow-inner shadow-black/20">
         <button
           onClick={() => setEditorMode('template')}

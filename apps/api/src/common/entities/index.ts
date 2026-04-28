@@ -2,6 +2,17 @@ export { User } from './user.entity';
 export { Project } from './project.entity';
 export { Prompt } from './prompt.entity';
 export { PromptVersion } from './prompt-version.entity';
+export { ChatVersion } from './chat-version.entity';
+export { PromptTemplate } from './prompt-template.entity';
+export type {
+  PromptTemplateVariable,
+  PromptTemplateMessage,
+} from './prompt-template.entity';
+export { ChatTemplate } from './chat-template.entity';
+export type {
+  ChatTemplateMessage,
+  ChatParameters,
+} from './chat-template.entity';
 export { Execution } from './execution.entity';
 export type { ExecutionSource } from './execution.entity';
 export { ExecutionGroup } from './execution-group.entity';

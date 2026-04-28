@@ -17,7 +17,7 @@ interface Version {
   id: string;
   versionNumber: number;
   content: string;
-  commitMessage: string;
+  commitMessage: string | null;
   createdAt: string;
 }
 
@@ -51,7 +51,10 @@ export function VersionDiff({ versions }: VersionDiffProps) {
       {/* Selectors */}
       <div className="space-y-2 px-3 py-2 border-b">
         <div className="flex items-center gap-1.5">
-          <Badge variant="outline" className="justify-center bg-red-500/10 border-red-500/20 w-10 text-[10px] text-red-600 shrink-0">
+          <Badge
+            variant="outline"
+            className="justify-center bg-red-500/10 border-red-500/20 w-10 text-[10px] text-red-600 shrink-0"
+          >
             Old
           </Badge>
           <Select value={leftId} onValueChange={(val) => val && setLeftId(val)}>
@@ -69,7 +72,10 @@ export function VersionDiff({ versions }: VersionDiffProps) {
         </div>
 
         <div className="flex items-center gap-1.5">
-          <Badge variant="outline" className="justify-center bg-green-500/10 border-green-500/20 w-10 text-[10px] text-green-600 shrink-0">
+          <Badge
+            variant="outline"
+            className="justify-center bg-green-500/10 border-green-500/20 w-10 text-[10px] text-green-600 shrink-0"
+          >
             New
           </Badge>
           <Select value={rightId} onValueChange={(val) => val && setRightId(val)}>

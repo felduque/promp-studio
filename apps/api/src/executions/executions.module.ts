@@ -1,7 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { HttpModule } from '@nestjs/axios';
-import { Execution, PromptVersion, ProviderModel, ExecutionGroup } from '../common/entities';
+import {
+  ChatVersion,
+  Execution,
+  PromptVersion,
+  ProviderModel,
+  ExecutionGroup,
+} from '../common/entities';
 import { ExecutionsController } from './executions.controller';
 import { ExecutionsService } from './executions.service';
 import { ApiKeysModule } from '../api-keys/api-keys.module';
@@ -9,8 +14,13 @@ import { ModelOrchestratorModule } from '../model-orchestrator/model-orchestrato
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Execution, PromptVersion, ProviderModel, ExecutionGroup]),
-    HttpModule,
+    TypeOrmModule.forFeature([
+      Execution,
+      PromptVersion,
+      ChatVersion,
+      ProviderModel,
+      ExecutionGroup,
+    ]),
     ApiKeysModule,
     ModelOrchestratorModule,
   ],

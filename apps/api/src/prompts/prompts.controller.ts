@@ -13,6 +13,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { PromptsService } from './prompts.service';
 import { CreatePromptDto } from './dto/create-prompt.dto';
 import { CreateVersionDto } from './dto/create-version.dto';
+import { CreateChatVersionDto } from './dto/create-chat-version.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -40,10 +41,7 @@ export class PromptsController {
 
   @Post()
   @ApiOperation({ summary: 'Crear un prompt' })
-  create(
-    @Body() dto: CreatePromptDto,
-    @CurrentUser() user: { id: string },
-  ) {
+  create(@Body() dto: CreatePromptDto, @CurrentUser() user: { id: string }) {
     return this.promptsService.create(dto, user.id);
   }
 
@@ -59,10 +57,7 @@ export class PromptsController {
 
   @Get(':id/versions')
   @ApiOperation({ summary: 'Obtener historial de versiones' })
-  getVersions(
-    @Param('id') id: string,
-    @CurrentUser() user: { id: string },
-  ) {
+  getVersions(@Param('id') id: string, @CurrentUser() user: { id: string }) {
     return this.promptsService.getVersions(id, user.id);
   }
 
@@ -73,6 +68,34 @@ export class PromptsController {
     @CurrentUser() user: { id: string },
   ) {
     return this.promptsService.getVersion(versionId, user.id);
+  }
+
+  @Get('chat-versions/:versionId')
+  @ApiOperation({ summary: 'Obtener una version especifica de chat' })
+  getChatVersion(
+    @Param('versionId') versionId: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.promptsService.getChatVersion(versionId, user.id);
+  }
+
+  @Post(':id/chat-versions')
+  @ApiOperation({ summary: 'Crear nueva version de chat' })
+  createChatVersion(
+    @Param('id') id: string,
+    @Body() dto: CreateChatVersionDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.promptsService.createChatVersion(id, dto, user.id);
+  }
+
+  @Get(':id/chat-versions')
+  @ApiOperation({ summary: 'Obtener historial de versiones de chat' })
+  getChatVersions(
+    @Param('id') id: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.promptsService.getChatVersions(id, user.id);
   }
 
   @Patch(':id/default-model')

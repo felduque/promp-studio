@@ -14,6 +14,8 @@ import { TestCasesModule } from './test-cases/test-cases.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { UserPreferencesModule } from './user-preferences/user-preferences.module';
 import { FavoriteModelsModule } from './favorite-models/favorite-models.module';
+import { TemplatesModule } from './templates/templates.module';
+import { StudioIoModule } from './studio-io/studio-io.module';
 
 @Module({
   imports: [
@@ -32,7 +34,8 @@ import { FavoriteModelsModule } from './favorite-models/favorite-models.module';
         password: configService.get<string>('DATABASE_PASSWORD', 'postgres'),
         database: configService.get<string>('DATABASE_NAME', 'prompt_studio'),
         autoLoadEntities: true,
-        synchronize: configService.get<string>('NODE_ENV', 'development') !== 'production',
+        synchronize:
+          configService.get<string>('NODE_ENV', 'development') !== 'production',
       }),
     }),
     AuthModule,
@@ -46,6 +49,8 @@ import { FavoriteModelsModule } from './favorite-models/favorite-models.module';
     AnalyticsModule,
     UserPreferencesModule,
     FavoriteModelsModule,
+    TemplatesModule,
+    StudioIoModule,
   ],
   controllers: [AppController],
   providers: [AppService],

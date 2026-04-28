@@ -11,6 +11,7 @@ import {
 import { User } from './user.entity';
 import { Execution } from './execution.entity';
 import { PromptVersion } from './prompt-version.entity';
+import { ChatVersion } from './chat-version.entity';
 
 @Entity('execution_groups')
 export class ExecutionGroup {
@@ -31,6 +32,13 @@ export class ExecutionGroup {
   @ManyToOne(() => PromptVersion, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'promptVersionId' })
   promptVersion: PromptVersion;
+
+  @Column({ type: 'uuid', nullable: true })
+  chatVersionId: string | null;
+
+  @ManyToOne(() => ChatVersion, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'chatVersionId' })
+  chatVersion: ChatVersion | null;
 
   @Column({ type: 'varchar', nullable: true })
   name: string;

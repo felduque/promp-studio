@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { usePromptStore } from '@/lib/stores/prompt-store';
+import type { ChatVersionData, PromptData, PromptVersionData } from '@/lib/types/studio';
 import { PromptEditor } from '@/components/editor/prompt-editor';
 import { VariablesPanel } from '@/components/editor/variables-panel';
 import { PromptPreview } from '@/components/editor/prompt-preview';
@@ -21,27 +22,6 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { Save, Loader2 } from 'lucide-react';
-
-interface PromptData {
-  id: string;
-  name: string;
-  projectId: string;
-  currentVersionId: string | null;
-  defaultModel: string | null;
-  versions: VersionData[];
-}
-
-interface VersionData {
-  id: string;
-  versionNumber: number;
-  content: string;
-  variables: any[];
-  messages: any[];
-  commitMessage: string;
-  tag: string | null;
-  createdAt: string;
-  author?: { name: string };
-}
 
 const TABS = [
   { id: 'variables', label: 'VARIABLES' },
@@ -61,13 +41,15 @@ export default function PromptEditorPage() {
 
   const {
     content,
-    variables,
+    promptVariables,
+    chatVariables,
     messages,
     isDirty,
+    promptDirty,
+    chatDirty,
     editorMode,
-    setContent,
-    setVariables,
-    setMessages,
+    hydratePrompt,
+    hydrateChat,
     resetDirty,
   } = usePromptStore();
 
@@ -76,47 +58,71 @@ export default function PromptEditorPage() {
   const [saving, setSaving] = useState(false);
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
+  const [saveScope, setSaveScope] = useState<'prompt' | 'chat' | 'all' | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('execute');
   const [isExecuting, setIsExecuting] = useState(false);
 
   const fetchPrompt = useCallback(async () => {
     try {
-      const { data } = await apiClient.get(`/prompts/${promptId}`);
+      const { data } = await apiClient.get<PromptData>(`/prompts/${promptId}`);
       setPrompt(data);
 
       if (data.versions && data.versions.length > 0) {
         const latest = data.versions.sort(
-          (a: VersionData, b: VersionData) => b.versionNumber - a.versionNumber,
+          (a: PromptVersionData, b: PromptVersionData) => b.versionNumber - a.versionNumber,
         )[0];
-        setContent(latest.content || '');
-        if (latest.variables?.length) setVariables(latest.variables);
-        if (latest.messages?.length) setMessages(latest.messages);
+        hydratePrompt(latest.content || '', latest.variables || []);
+      } else {
+        hydratePrompt('', []);
       }
-      resetDirty();
+
+      if (data.chatVersions && data.chatVersions.length > 0) {
+        const latestChat = data.chatVersions.sort(
+          (a: ChatVersionData, b: ChatVersionData) => b.versionNumber - a.versionNumber,
+        )[0];
+        hydrateChat(latestChat.messages || [], latestChat.variables || []);
+      } else {
+        hydrateChat([], []);
+      }
+      resetDirty('all');
     } catch {
       router.push(`/projects/${projectId}`);
     } finally {
       setLoading(false);
     }
-  }, [promptId, projectId, router, setContent, setVariables, setMessages, resetDirty]);
+  }, [promptId, projectId, router, hydratePrompt, hydrateChat, resetDirty]);
 
   useEffect(() => {
     setLoading(true);
-    setContent('');
-    setVariables([]);
-    setMessages([]);
-  }, [promptId, setContent, setVariables, setMessages]);
+    hydratePrompt('', []);
+    hydrateChat([], []);
+  }, [promptId, hydratePrompt, hydrateChat]);
 
   useEffect(() => {
     fetchPrompt();
   }, [fetchPrompt]);
+
+  const openSaveDialog = useCallback(
+    (scope?: 'prompt' | 'chat' | 'all') => {
+      if (!isDirty) return;
+      if (scope) {
+        setSaveScope(scope);
+      } else if (promptDirty && chatDirty) {
+        setSaveScope(null);
+      } else {
+        setSaveScope(promptDirty ? 'prompt' : 'chat');
+      }
+      setCommitDialogOpen(true);
+    },
+    [chatDirty, isDirty, promptDirty],
+  );
 
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        if (isDirty) setCommitDialogOpen(true);
+        openSaveDialog();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
@@ -125,26 +131,55 @@ export default function PromptEditorPage() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isDirty]);
+  }, [openSaveDialog]);
 
-  const handleSave = async () => {
-    if (!commitMessage.trim()) return;
+  const withoutRuntimeValues = (items: typeof promptVariables) =>
+    items.map((item) => ({
+      name: item.name,
+      type: item.type,
+      defaultValue: item.defaultValue,
+      options: item.options,
+    }));
+
+  const handleSave = async (scopeOverride?: 'prompt' | 'chat' | 'all') => {
+    const scope = scopeOverride || saveScope;
+    if (!scope) return;
     setSaving(true);
     try {
-      await apiClient.post(`/prompts/${promptId}/versions`, {
-        content,
-        variables: variables.map(({ value, ...rest }) => rest),
-        messages,
-        commitMessage,
-      });
-      toast.success(`Versión guardada: ${commitMessage}`);
+      if (scope === 'prompt' || scope === 'all') {
+        await apiClient.post(`/prompts/${promptId}/versions`, {
+          content,
+          variables: withoutRuntimeValues(promptVariables),
+          messages: [],
+          commitMessage: commitMessage.trim() || undefined,
+          parentVersionId: prompt?.currentVersionId || undefined,
+        });
+        resetDirty('prompt');
+      }
+
+      if (scope === 'chat' || scope === 'all') {
+        await apiClient.post(`/prompts/${promptId}/chat-versions`, {
+          systemMessage:
+            messages.find((message) => message.role === 'system')?.content || undefined,
+          userMessage: messages.find((message) => message.role === 'user')?.content || undefined,
+          assistantMessage:
+            messages.find((message) => message.role === 'assistant')?.content || undefined,
+          messages,
+          variables: withoutRuntimeValues(chatVariables),
+          commitMessage: commitMessage.trim() || undefined,
+          parentVersionId: prompt?.currentChatVersionId || undefined,
+        });
+        resetDirty('chat');
+      }
+
+      toast.success('Cambios guardados');
       setCommitMessage('');
+      setSaveScope(null);
       setCommitDialogOpen(false);
-      resetDirty();
       fetchPrompt();
     } catch (err) {
       console.error('Error saving version:', err);
-      toast.error('Error al guardar la versión');
+      toast.error('Error al guardar los cambios');
     } finally {
       setSaving(false);
     }
@@ -160,9 +195,33 @@ export default function PromptEditorPage() {
 
   if (!prompt) return null;
 
-  const currentVersion = prompt.versions?.sort(
+  const currentVersion = prompt.versions?.sort((a, b) => b.versionNumber - a.versionNumber)[0];
+  const currentChatVersion = prompt.chatVersions?.sort(
     (a, b) => b.versionNumber - a.versionNumber,
   )[0];
+  const activeDirty = editorMode === 'chat' ? chatDirty : promptDirty;
+  const activeHistory =
+    editorMode === 'chat' ? (prompt.chatVersions ?? []) : (prompt.versions ?? []);
+  const diffVersions =
+    editorMode === 'chat'
+      ? (prompt.chatVersions ?? []).map((version) => ({
+          id: version.id,
+          versionNumber: version.versionNumber,
+          content: JSON.stringify(
+            {
+              systemMessage: version.systemMessage,
+              userMessage: version.userMessage,
+              assistantMessage: version.assistantMessage,
+              messages: version.messages,
+              parameters: version.parameters,
+            },
+            null,
+            2,
+          ),
+          commitMessage: version.commitMessage || '',
+          createdAt: version.createdAt,
+        }))
+      : (prompt.versions ?? []);
 
   return (
     <div className="flex flex-col h-full bg-ps-bg-base">
@@ -172,14 +231,15 @@ export default function PromptEditorPage() {
           <h1 className="font-[var(--font-space-grotesk)] font-bold text-[#dae2fd] text-2xl tracking-tight">
             {prompt.name}
           </h1>
-          {currentVersion && (
+          {(editorMode === 'chat' ? currentChatVersion : currentVersion) && (
             <span className="bg-[#39485a] text-[#a7b6cc] px-2 py-0.5 rounded text-xs font-bold font-[var(--font-geist-mono)] uppercase tracking-wider">
-              V{currentVersion.versionNumber}
+              {editorMode === 'chat' ? 'CHAT' : 'PROMPT'} V
+              {(editorMode === 'chat' ? currentChatVersion : currentVersion)?.versionNumber}
             </span>
           )}
           <span className="font-[var(--font-geist-mono)] text-sm text-[#464554] ml-2">
-            {currentVersion
-              ? `Edited ${getTimeAgo(currentVersion.createdAt)}`
+            {(editorMode === 'chat' ? currentChatVersion : currentVersion)
+              ? `Edited ${getTimeAgo((editorMode === 'chat' ? currentChatVersion : currentVersion)!.createdAt)}`
               : 'New prompt'}
           </span>
         </div>
@@ -190,11 +250,18 @@ export default function PromptEditorPage() {
               className="text-[#c0c1ff] hover:bg-[#2d3449]/30 px-4 py-2 rounded text-sm transition-colors"
               onClick={() => {
                 if (currentVersion) {
-                  setContent(currentVersion.content || '');
-                  if (currentVersion.variables?.length) setVariables(currentVersion.variables);
-                  if (currentVersion.messages?.length) setMessages(currentVersion.messages);
-                  resetDirty();
+                  hydratePrompt(currentVersion.content || '', currentVersion.variables || []);
+                } else {
+                  hydratePrompt('', []);
                 }
+                const currentChatVersion = prompt.chatVersions?.sort(
+                  (a, b) => b.versionNumber - a.versionNumber,
+                )[0];
+                hydrateChat(
+                  currentChatVersion?.messages || [],
+                  currentChatVersion?.variables || [],
+                );
+                resetDirty('all');
               }}
             >
               Discard Changes
@@ -202,7 +269,7 @@ export default function PromptEditorPage() {
           )}
           <button
             className="bg-gradient-to-r from-[#c0c1ff] to-[#8083ff] text-[#1000a9] font-bold rounded px-6 py-2 shadow-[0_4px_14px_rgba(192,193,255,0.2)] hover:shadow-[0_6px_20px_rgba(192,193,255,0.3)] transition-all flex items-center gap-2 relative overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={() => isDirty && setCommitDialogOpen(true)}
+            onClick={() => openSaveDialog()}
             disabled={!isDirty}
           >
             <div className="absolute top-0 left-0 w-full h-[1px] bg-white/40" />
@@ -216,7 +283,17 @@ export default function PromptEditorPage() {
       <div className="flex flex-1 overflow-hidden gap-6 p-6">
         {/* Editor Area — flex-[6.5] like Stitch */}
         <div className="flex-[6.5] min-w-0 min-h-0">
-          <PromptEditor />
+          <PromptEditor
+            promptId={prompt.id}
+            projectId={projectId}
+            onImported={(importedPromptId) => {
+              if (importedPromptId) {
+                router.push(`/projects/${projectId}/prompts/${importedPromptId}`);
+              } else {
+                fetchPrompt();
+              }
+            }}
+          />
         </div>
 
         {/* Right Panel — flex-[3.5] like Stitch */}
@@ -235,8 +312,8 @@ export default function PromptEditorPage() {
                   activeTab === tab.id
                     ? 'text-[#c0c1ff] border-b-2 border-[#c0c1ff] bg-[#2d3449]/50 font-bold'
                     : isExecuting && tab.id !== 'execute'
-                    ? 'text-[#464554] cursor-not-allowed'
-                    : 'text-[#c7c4d7] hover:text-[#dae2fd]'
+                      ? 'text-[#464554] cursor-not-allowed'
+                      : 'text-[#c7c4d7] hover:text-[#dae2fd]'
                 }`}
               >
                 {tab.id === 'execute' && isExecuting ? (
@@ -244,7 +321,9 @@ export default function PromptEditorPage() {
                     <Loader2 className="w-3 h-3 animate-spin" />
                     {tab.label}
                   </span>
-                ) : tab.label}
+                ) : (
+                  tab.label
+                )}
               </button>
             ))}
           </div>
@@ -256,22 +335,27 @@ export default function PromptEditorPage() {
                 <VariablesPanel />
               </ScrollArea>
             )}
-            {activeTab === 'preview' && (
-              <PromptPreview />
-            )}
+            {activeTab === 'preview' && <PromptPreview />}
             {activeTab === 'history' && (
               <ScrollArea className="h-full p-6">
                 <div className="space-y-3">
-                  {prompt.versions
-                    ?.sort((a, b) => b.versionNumber - a.versionNumber)
+                  {[...activeHistory]
+                    .sort((a, b) => b.versionNumber - a.versionNumber)
                     .map((version) => (
                       <button
                         key={version.id}
                         className="w-full text-left p-4 rounded-xl bg-[#171f33] hover:bg-[#2d3449]/30 border border-[rgba(70,69,84,0.15)] transition-all"
                         onClick={() => {
-                          setContent(version.content);
-                          if (version.variables?.length) setVariables(version.variables);
-                          if (version.messages?.length) setMessages(version.messages);
+                          if (editorMode === 'chat') {
+                            const chatVersion = version as ChatVersionData;
+                            hydrateChat(chatVersion.messages || [], chatVersion.variables || []);
+                          } else {
+                            const promptVersion = version as PromptVersionData;
+                            hydratePrompt(
+                              promptVersion.content || '',
+                              promptVersion.variables || [],
+                            );
+                          }
                         }}
                       >
                         <div className="flex justify-between items-center">
@@ -293,7 +377,7 @@ export default function PromptEditorPage() {
                         </p>
                       </button>
                     ))}
-                  {(!prompt.versions || prompt.versions.length === 0) && (
+                  {activeHistory.length === 0 && (
                     <p className="py-8 text-[#c7c4d7] text-sm text-center">
                       Sin versiones aún. Guarda tu primera versión.
                     </p>
@@ -301,20 +385,19 @@ export default function PromptEditorPage() {
                 </div>
               </ScrollArea>
             )}
-            {activeTab === 'diff' && (
-              <VersionDiff versions={prompt.versions ?? []} />
-            )}
+            {activeTab === 'diff' && <VersionDiff versions={diffVersions} />}
             {/* ExecutionPanel always mounted to preserve state during execution */}
             <div className={activeTab === 'execute' ? 'h-full' : 'hidden'}>
               <ExecutionPanel
                 promptId={prompt.id}
-                promptVersionId={prompt.currentVersionId}
+                promptVersionId={editorMode === 'chat' ? null : prompt.currentVersionId}
+                chatVersionId={editorMode === 'chat' ? prompt.currentChatVersionId : null}
                 defaultModel={prompt.defaultModel}
-                isDirty={isDirty}
+                isDirty={activeDirty}
                 editorMode={editorMode}
                 currentContent={content}
                 currentMessages={messages}
-                onSaveAndExecute={() => setCommitDialogOpen(true)}
+                onSaveAndExecute={() => openSaveDialog(editorMode === 'chat' ? 'chat' : 'prompt')}
                 onExecutingChange={setIsExecuting}
               />
             </div>
@@ -323,14 +406,43 @@ export default function PromptEditorPage() {
       </div>
 
       {/* Save dialog */}
-      <Dialog open={commitDialogOpen} onOpenChange={setCommitDialogOpen}>
+      <Dialog
+        open={commitDialogOpen}
+        onOpenChange={(open) => {
+          setCommitDialogOpen(open);
+          if (!open) setSaveScope(null);
+        }}
+      >
         <DialogContent className="bg-[#131b2e] border-[rgba(70,69,84,0.15)]">
           <DialogHeader>
-            <DialogTitle className="text-[#dae2fd]">Guardar nueva versión</DialogTitle>
+            <DialogTitle className="text-[#dae2fd]">Guardar cambios</DialogTitle>
             <DialogDescription className="text-[#c7c4d7]">
-              Describe los cambios en esta versión del prompt.
+              El mensaje de commit es opcional. Elige que area guardar cuando hay cambios en ambas
+              vistas.
             </DialogDescription>
           </DialogHeader>
+          {promptDirty && chatDirty && !saveScope && (
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                className="bg-[#171f33] hover:bg-[#2d3449]/50 text-[#dae2fd] rounded px-3 py-2 text-sm"
+                onClick={() => setSaveScope('all')}
+              >
+                Guardar todo
+              </button>
+              <button
+                className="bg-[#171f33] hover:bg-[#2d3449]/50 text-[#dae2fd] rounded px-3 py-2 text-sm"
+                onClick={() => setSaveScope('prompt')}
+              >
+                Guardar prompt
+              </button>
+              <button
+                className="bg-[#171f33] hover:bg-[#2d3449]/50 text-[#dae2fd] rounded px-3 py-2 text-sm"
+                onClick={() => setSaveScope('chat')}
+              >
+                Guardar chat
+              </button>
+            </div>
+          )}
           <Input
             placeholder="Ej: Mejorar tono formal del sistema"
             value={commitMessage}
@@ -341,16 +453,33 @@ export default function PromptEditorPage() {
           <DialogFooter>
             <button
               className="text-[#c7c4d7] hover:text-[#dae2fd] hover:bg-[#2d3449]/30 px-4 py-2 rounded text-sm transition-colors"
-              onClick={() => setCommitDialogOpen(false)}
+              onClick={() => {
+                setCommitDialogOpen(false);
+                setSaveScope(null);
+              }}
             >
               Cancelar
             </button>
+            {promptDirty && chatDirty && saveScope && (
+              <button
+                className="text-[#c7c4d7] hover:text-[#dae2fd] hover:bg-[#2d3449]/30 px-4 py-2 rounded text-sm transition-colors"
+                onClick={() => setSaveScope(null)}
+              >
+                Cambiar opcion
+              </button>
+            )}
             <button
               className="bg-gradient-to-r from-[#c0c1ff] to-[#8083ff] text-[#1000a9] font-bold rounded px-6 py-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]"
-              onClick={handleSave}
-              disabled={saving || !commitMessage.trim()}
+              onClick={() => handleSave()}
+              disabled={saving || !saveScope}
             >
-              {saving ? 'Guardando...' : `Guardar v${(currentVersion?.versionNumber || 0) + 1}`}
+              {saving
+                ? 'Guardando...'
+                : saveScope === 'all'
+                  ? 'Guardar todo'
+                  : saveScope === 'chat'
+                    ? `Guardar chat v${(currentChatVersion?.versionNumber || 0) + 1}`
+                    : `Guardar prompt v${(currentVersion?.versionNumber || 0) + 1}`}
             </button>
           </DialogFooter>
         </DialogContent>

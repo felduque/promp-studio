@@ -5,9 +5,15 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
-import { Execution, PromptVersion, ProviderModel, ProviderType, ExecutionSource, ExecutionGroup } from '../common/entities';
+import {
+  ChatVersion,
+  Execution,
+  PromptVersion,
+  ProviderModel,
+  ProviderType,
+  ExecutionSource,
+  ExecutionGroup,
+} from '../common/entities';
 import { ApiKeysService } from '../api-keys/api-keys.service';
 import { ExecutePromptDto, PreviewExecuteDto } from './dto/execute-prompt.dto';
 import { ModelOrchestratorService } from '../model-orchestrator/model-orchestrator.service';
@@ -44,12 +50,13 @@ export class ExecutionsService {
     private readonly executionRepository: Repository<Execution>,
     @InjectRepository(PromptVersion)
     private readonly versionRepository: Repository<PromptVersion>,
+    @InjectRepository(ChatVersion)
+    private readonly chatVersionRepository: Repository<ChatVersion>,
     @InjectRepository(ProviderModel)
     private readonly providerModelRepository: Repository<ProviderModel>,
     @InjectRepository(ExecutionGroup)
     private readonly groupRepository: Repository<ExecutionGroup>,
     private readonly apiKeysService: ApiKeysService,
-    private readonly httpService: HttpService,
     private readonly modelOrchestrator: ModelOrchestratorService,
     private readonly modelSyncService: ModelSyncService,
   ) {}
@@ -60,7 +67,7 @@ export class ExecutionsService {
 
     for (const provider of userProviders) {
       const models = await this.getProviderModels(provider as ProviderType);
-      
+
       if (models.length > 0) {
         result.push({
           provider,
@@ -73,7 +80,9 @@ export class ExecutionsService {
     return result;
   }
 
-  private async getProviderModels(provider: ProviderType): Promise<CatalogModel[]> {
+  private async getProviderModels(
+    provider: ProviderType,
+  ): Promise<CatalogModel[]> {
     // Get models from database (synced from providers)
     const dbModels = await this.providerModelRepository.find({
       where: { provider, isActive: true },
@@ -116,8 +125,19 @@ export class ExecutionsService {
   }
 
   async execute(dto: ExecutePromptDto, userId: string) {
+    if (dto.chatVersionId) {
+      return this.executeChatVersion(dto, userId);
+    }
+
+    const promptVersionId = dto.promptVersionId;
+    if (!promptVersionId) {
+      throw new BadRequestException(
+        'promptVersionId o chatVersionId es requerido',
+      );
+    }
+
     const version = await this.versionRepository.findOne({
-      where: { id: dto.promptVersionId },
+      where: { id: promptVersionId },
       relations: ['prompt', 'prompt.project'],
     });
 
@@ -136,14 +156,18 @@ export class ExecutionsService {
       const allModels = await this.providerModelRepository.find({
         where: { isActive: true },
       });
-      const foundModel = allModels.find((m) => m.externalId === dto.model || m.id === dto.model);
+      const foundModel = allModels.find(
+        (m) => m.externalId === dto.model || m.id === dto.model,
+      );
       if (foundModel) {
         model = foundModel;
       }
     }
 
     if (!model) {
-      throw new BadRequestException(`Modelo ${dto.model} no encontrado o no disponible`);
+      throw new BadRequestException(
+        `Modelo ${dto.model} no encontrado o no disponible`,
+      );
     }
 
     const provider = model.provider;
@@ -184,8 +208,8 @@ export class ExecutionsService {
 
     // Filter out empty messages and ensure content is string
     let validMessages = messages
-      .filter(m => m.content && m.content.trim().length > 0)
-      .map(m => ({ role: m.role, content: m.content.trim() }));
+      .filter((m) => m.content && m.content.trim().length > 0)
+      .map((m) => ({ role: m.role, content: m.content.trim() }));
 
     // If all messages were empty, fall back to resolvedContent
     if (validMessages.length === 0 && resolvedContent.trim().length > 0) {
@@ -193,7 +217,9 @@ export class ExecutionsService {
     }
 
     if (validMessages.length === 0) {
-      throw new BadRequestException('El prompt está vacío. Asegúrate de que el contenido no esté vacío y las variables tengan valores.');
+      throw new BadRequestException(
+        'El prompt está vacío. Asegúrate de que el contenido no esté vacío y las variables tengan valores.',
+      );
     }
 
     // Execute via orchestrator
@@ -213,7 +239,8 @@ export class ExecutionsService {
         : 0;
 
       const execution = this.executionRepository.create({
-        promptVersionId: dto.promptVersionId,
+        promptVersionId,
+        chatVersionId: null,
         userId,
         source: (dto.source || 'prompt') as ExecutionSource,
         provider,
@@ -232,27 +259,179 @@ export class ExecutionsService {
       });
 
       return await this.executionRepository.save(execution);
-    } catch (error: any) {
-      const errorMessage = error?.response?.data?.error?.message || error.message;
-      
+    } catch (error: unknown) {
+      const errorMessage = this.getProviderErrorMessage(error);
+
       // Provide helpful message for OpenRouter privacy error
-      if (errorMessage.includes('guardrail') || errorMessage.includes('data policy')) {
+      if (
+        errorMessage.includes('guardrail') ||
+        errorMessage.includes('data policy')
+      ) {
         throw new BadRequestException(
           `Error de privacidad en OpenRouter: Debes configurar tus preferencias de privacidad en https://openrouter.ai/settings/privacy`,
         );
       }
-      
+
+      throw new BadRequestException(`Error ejecutando prompt: ${errorMessage}`);
+    }
+  }
+
+  private async executeChatVersion(dto: ExecutePromptDto, userId: string) {
+    const chatVersionId = dto.chatVersionId;
+    if (!chatVersionId) {
+      throw new BadRequestException('chatVersionId es requerido');
+    }
+
+    const version = await this.chatVersionRepository.findOne({
+      where: { id: chatVersionId },
+      relations: ['prompt', 'prompt.project'],
+    });
+
+    if (!version) throw new NotFoundException('Version de chat no encontrada');
+    if (version.prompt.project.userId !== userId) {
+      throw new BadRequestException('No tienes acceso a este chat');
+    }
+
+    let model = await this.providerModelRepository.findOne({
+      where: { externalId: dto.model },
+    });
+
+    if (!model) {
+      const allModels = await this.providerModelRepository.find({
+        where: { isActive: true },
+      });
+      const foundModel = allModels.find(
+        (m) => m.externalId === dto.model || m.id === dto.model,
+      );
+      if (foundModel) {
+        model = foundModel;
+      }
+    }
+
+    if (!model) {
       throw new BadRequestException(
-        `Error ejecutando prompt: ${errorMessage}`,
+        `Modelo ${dto.model} no encontrado o no disponible`,
       );
     }
+
+    const provider = model.provider;
+    const apiKey = await this.apiKeysService.getDecryptedKey(userId, provider);
+    if (!apiKey) {
+      throw new BadRequestException(
+        `No tienes una API key configurada para ${PROVIDER_LABELS[provider] ?? provider}. Ve a Settings -> API Keys.`,
+      );
+    }
+
+    const baseMessages = version.messages?.length
+      ? version.messages
+      : [
+          { role: 'system' as const, content: version.systemMessage || '' },
+          { role: 'user' as const, content: version.userMessage || '' },
+          {
+            role: 'assistant' as const,
+            content: version.assistantMessage || '',
+          },
+        ];
+
+    const validMessages = baseMessages
+      .map((message) => {
+        let content = message.content;
+        if (dto.variables) {
+          for (const [key, value] of Object.entries(dto.variables)) {
+            content = content.replaceAll(`{{${key}}}`, value);
+          }
+        }
+        return { role: message.role, content };
+      })
+      .filter((message) => message.content && message.content.trim().length > 0)
+      .map((message) => ({
+        role: message.role,
+        content: message.content.trim(),
+      }));
+
+    if (validMessages.length === 0) {
+      throw new BadRequestException(
+        'El chat esta vacio. Revisa mensajes y variables.',
+      );
+    }
+
+    try {
+      const result = await this.modelOrchestrator.execute({
+        model,
+        apiKey,
+        messages: validMessages,
+        temperature: dto.temperature ?? version.parameters?.temperature ?? 0.7,
+        maxTokens: dto.maxTokens ?? version.parameters?.maxTokens ?? 1024,
+        topP: dto.topP ?? version.parameters?.topP ?? 1,
+      });
+
+      const cost = model
+        ? (result.tokensIn / 1_000_000) * model.pricing.input +
+          (result.tokensOut / 1_000_000) * model.pricing.output
+        : 0;
+
+      const execution = this.executionRepository.create({
+        promptVersionId: null,
+        chatVersionId,
+        userId,
+        source: 'chat',
+        provider,
+        model: dto.model,
+        input: { variables: dto.variables || {}, messages: validMessages },
+        output: result.output,
+        tokensIn: result.tokensIn,
+        tokensOut: result.tokensOut,
+        latencyMs: result.latencyMs,
+        cost,
+        parameters: {
+          temperature:
+            dto.temperature ?? version.parameters?.temperature ?? 0.7,
+          maxTokens: dto.maxTokens ?? version.parameters?.maxTokens ?? 1024,
+          topP: dto.topP ?? version.parameters?.topP ?? 1,
+        },
+      });
+
+      return await this.executionRepository.save(execution);
+    } catch (error: unknown) {
+      const errorMessage = this.getProviderErrorMessage(error);
+
+      if (
+        errorMessage.includes('guardrail') ||
+        errorMessage.includes('data policy')
+      ) {
+        throw new BadRequestException(
+          'Error de privacidad en OpenRouter: configura tus preferencias de privacidad en https://openrouter.ai/settings/privacy',
+        );
+      }
+
+      throw new BadRequestException(`Error ejecutando chat: ${errorMessage}`);
+    }
+  }
+
+  private getProviderErrorMessage(error: unknown): string {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'response' in error &&
+      typeof (
+        error as { response?: { data?: { error?: { message?: unknown } } } }
+      ).response?.data?.error?.message === 'string'
+    ) {
+      return (error as { response: { data: { error: { message: string } } } })
+        .response.data.error.message;
+    }
+
+    if (error instanceof Error) return error.message;
+    return 'Unknown error';
   }
 
   /**
    * Validate that models exist in the catalog and are active.
    * Returns { valid, invalid } arrays.
    */
-  async validateModels(modelIds: string[]): Promise<{ valid: string[]; invalid: string[] }> {
+  async validateModels(
+    modelIds: string[],
+  ): Promise<{ valid: string[]; invalid: string[] }> {
     const activeModels = await this.providerModelRepository.find({
       where: { isActive: true },
       select: ['externalId'],
@@ -277,7 +456,9 @@ export class ExecutionsService {
       status: result.status,
       data: result.status === 'fulfilled' ? result.value : undefined,
       error:
-        result.status === 'rejected' ? result.reason?.message : undefined,
+        result.status === 'rejected'
+          ? this.getProviderErrorMessage(result.reason)
+          : undefined,
     }));
   }
 
@@ -289,15 +470,26 @@ export class ExecutionsService {
     dto: {
       models: string[];
       promptVersionId?: string;
+      chatVersionId?: string;
       source?: 'prompt' | 'chat';
       content?: string;
-      messages?: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+      messages?: Array<{
+        role: 'system' | 'user' | 'assistant';
+        content: string;
+      }>;
       variables?: Record<string, string>;
       temperature?: number;
       maxTokens?: number;
     },
     userId: string,
-  ): AsyncGenerator<{ model: string; status: string; data?: any; error?: string; groupId?: string; invalidModels?: string[] }> {
+  ): AsyncGenerator<{
+    model: string;
+    status: string;
+    data?: unknown;
+    error?: string;
+    groupId?: string;
+    invalidModels?: string[];
+  }> {
     const { models, ...params } = dto;
 
     // 1. Validate models exist in catalog
@@ -308,7 +500,11 @@ export class ExecutionsService {
     }
 
     if (valid.length === 0) {
-      yield { model: '', status: 'error', error: 'Ninguno de los modelos seleccionados está disponible.' };
+      yield {
+        model: '',
+        status: 'error',
+        error: 'Ninguno de los modelos seleccionados está disponible.',
+      };
       return;
     }
 
@@ -316,6 +512,7 @@ export class ExecutionsService {
     const group = this.groupRepository.create({
       userId,
       promptVersionId: params.promptVersionId || null,
+      chatVersionId: params.chatVersionId || null,
       models: valid,
       parameters: {
         temperature: params.temperature,
@@ -331,7 +528,7 @@ export class ExecutionsService {
 
     // 3. Execute each valid model
     const pending = valid.map((model) => {
-      const isPreview = !params.promptVersionId;
+      const isPreview = !params.promptVersionId && !params.chatVersionId;
 
       const promise = isPreview
         ? this.executePreview(
@@ -348,7 +545,8 @@ export class ExecutionsService {
           )
         : this.execute(
             {
-              promptVersionId: params.promptVersionId!,
+              promptVersionId: params.promptVersionId,
+              chatVersionId: params.chatVersionId,
               model,
               source: params.source,
               variables: params.variables,
@@ -362,14 +560,21 @@ export class ExecutionsService {
         .then(async (data) => {
           // Assign groupId to the execution
           if (data?.id) {
-            await this.executionRepository.update(data.id, { groupId: savedGroup.id });
+            await this.executionRepository.update(data.id, {
+              groupId: savedGroup.id,
+            });
           }
-          return { model, status: 'fulfilled' as const, data, groupId: savedGroup.id };
+          return {
+            model,
+            status: 'fulfilled' as const,
+            data,
+            groupId: savedGroup.id,
+          };
         })
-        .catch((err) => ({
+        .catch((err: unknown) => ({
           model,
           status: 'rejected' as const,
-          error: err?.response?.message || err?.message || 'Unknown error',
+          error: this.getProviderErrorMessage(err),
           groupId: savedGroup.id,
         }));
     });
@@ -377,9 +582,10 @@ export class ExecutionsService {
     // 4. Yield results as they arrive using Promise.race
     const remaining = [...pending];
     while (remaining.length > 0) {
-      const result = await Promise.race(
-        remaining.map((p, i) => p.then((r) => ({ result: r, index: i }))),
+      const races = remaining.map((p, i) =>
+        p.then((r) => ({ result: r, index: i })),
       );
+      const result = await Promise.race(races);
       yield result.result;
       remaining.splice(result.index, 1);
     }
@@ -391,7 +597,13 @@ export class ExecutionsService {
   async getGroups(userId: string, page = 1, limit = 20) {
     const [items, total] = await this.groupRepository.findAndCount({
       where: { userId },
-      relations: ['executions', 'promptVersion', 'promptVersion.prompt', 'promptVersion.prompt.project'],
+      relations: [
+        'executions',
+        'promptVersion',
+        'promptVersion.prompt',
+        'promptVersion.prompt.project',
+        'chatVersion',
+      ],
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -405,7 +617,13 @@ export class ExecutionsService {
   async getGroup(groupId: string, userId: string) {
     const group = await this.groupRepository.findOne({
       where: { id: groupId, userId },
-      relations: ['executions', 'promptVersion', 'promptVersion.prompt', 'promptVersion.prompt.project'],
+      relations: [
+        'executions',
+        'promptVersion',
+        'promptVersion.prompt',
+        'promptVersion.prompt.project',
+        'chatVersion',
+      ],
     });
     if (!group) throw new NotFoundException('Grupo de ejecución no encontrado');
     return group;
@@ -435,14 +653,18 @@ export class ExecutionsService {
       const allModels = await this.providerModelRepository.find({
         where: { isActive: true },
       });
-      const foundModel = allModels.find((m) => m.externalId === dto.model || m.id === dto.model);
+      const foundModel = allModels.find(
+        (m) => m.externalId === dto.model || m.id === dto.model,
+      );
       if (foundModel) {
         model = foundModel;
       }
     }
 
     if (!model) {
-      throw new BadRequestException(`Modelo ${dto.model} no encontrado o no disponible`);
+      throw new BadRequestException(
+        `Modelo ${dto.model} no encontrado o no disponible`,
+      );
     }
 
     const provider = model.provider;
@@ -457,7 +679,7 @@ export class ExecutionsService {
 
     // Build messages from either content or messages array
     let messages: Array<{ role: string; content: string }> = [];
-    
+
     if (dto.messages?.length) {
       // Chat mode: use messages array
       messages = dto.messages.map((m) => {
@@ -482,11 +704,13 @@ export class ExecutionsService {
 
     // Filter out empty messages
     const validMessages = messages
-      .filter(m => m.content && m.content.trim().length > 0)
-      .map(m => ({ role: m.role, content: m.content.trim() }));
+      .filter((m) => m.content && m.content.trim().length > 0)
+      .map((m) => ({ role: m.role, content: m.content.trim() }));
 
     if (validMessages.length === 0) {
-      throw new BadRequestException('El prompt está vacío. Asegúrate de que el contenido no esté vacío y las variables tengan valores.');
+      throw new BadRequestException(
+        'El prompt está vacío. Asegúrate de que el contenido no esté vacío y las variables tengan valores.',
+      );
     }
 
     // Execute via orchestrator and persist for history
@@ -508,11 +732,16 @@ export class ExecutionsService {
       // Save to database for history (promptVersionId is null for preview)
       const execution = this.executionRepository.create({
         promptVersionId: null,
+        chatVersionId: null,
         userId,
         source: (dto.source || 'chat') as ExecutionSource,
         provider,
         model: dto.model,
-        input: { content: dto.content, messages: validMessages, variables: dto.variables || {} },
+        input: {
+          content: dto.content,
+          messages: validMessages,
+          variables: dto.variables || {},
+        },
         output: result.output,
         tokensIn: result.tokensIn,
         tokensOut: result.tokensOut,
@@ -544,18 +773,19 @@ export class ExecutionsService {
         },
         messages: validMessages,
       };
-    } catch (error: any) {
-      const errorMessage = error?.response?.data?.error?.message || error.message;
-      
-      if (errorMessage.includes('guardrail') || errorMessage.includes('data policy')) {
+    } catch (error: unknown) {
+      const errorMessage = this.getProviderErrorMessage(error);
+
+      if (
+        errorMessage.includes('guardrail') ||
+        errorMessage.includes('data policy')
+      ) {
         throw new BadRequestException(
           `Error de privacidad en OpenRouter: Debes configurar tus preferencias de privacidad en https://openrouter.ai/settings/privacy`,
         );
       }
-      
-      throw new BadRequestException(
-        `Error ejecutando prompt: ${errorMessage}`,
-      );
+
+      throw new BadRequestException(`Error ejecutando prompt: ${errorMessage}`);
     }
   }
 
@@ -577,6 +807,7 @@ export class ExecutionsService {
       .createQueryBuilder('e')
       .where('e.userId = :userId', { userId })
       .leftJoinAndSelect('e.promptVersion', 'pv')
+      .leftJoinAndSelect('e.chatVersion', 'cv')
       .leftJoin('pv.prompt', 'p')
       .addSelect(['p.id', 'p.name']);
 

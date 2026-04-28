@@ -4,7 +4,7 @@ export interface PromptVariable {
   name: string;
   type: 'string' | 'number' | 'enum' | 'json';
   defaultValue: string;
-  value: string;
+  value?: string;
   options?: string[];
 }
 
@@ -18,8 +18,12 @@ export type EditorMode = 'template' | 'chat';
 interface PromptEditorState {
   content: string;
   variables: PromptVariable[];
+  promptVariables: PromptVariable[];
+  chatVariables: PromptVariable[];
   messages: PromptMessage[];
   isDirty: boolean;
+  promptDirty: boolean;
+  chatDirty: boolean;
   editorMode: EditorMode;
 
   setContent: (content: string) => void;
@@ -31,7 +35,9 @@ interface PromptEditorState {
   updateMessage: (index: number, message: PromptMessage) => void;
   removeMessage: (index: number) => void;
   reorderMessages: (from: number, to: number) => void;
-  resetDirty: () => void;
+  resetDirty: (scope?: 'prompt' | 'chat' | 'all') => void;
+  hydratePrompt: (content: string, variables: PromptVariable[]) => void;
+  hydrateChat: (messages: PromptMessage[], variables?: PromptVariable[]) => void;
   resolveTemplate: () => string;
   detectVariables: (content: string) => PromptVariable[];
 }
@@ -39,38 +45,97 @@ interface PromptEditorState {
 export const usePromptStore = create<PromptEditorState>((set, get) => ({
   content: '',
   variables: [],
+  promptVariables: [],
+  chatVariables: [],
   messages: [],
   isDirty: false,
+  promptDirty: false,
+  chatDirty: false,
   editorMode: 'template',
 
-  setEditorMode: (mode) => set({ editorMode: mode }),
+  setEditorMode: (mode) =>
+    set((state) => ({
+      editorMode: mode,
+      variables: mode === 'chat' ? state.chatVariables : state.promptVariables,
+    })),
 
   setContent: (content: string) => {
     const detected = get().detectVariables(content);
-    const existing = get().variables;
+    const existing = get().promptVariables;
 
     const merged = detected.map((v) => {
       const prev = existing.find((e) => e.name === v.name);
-      return prev ? { ...v, value: prev.value, defaultValue: prev.defaultValue, type: prev.type, options: prev.options } : v;
+      return prev
+        ? {
+            ...v,
+            value: prev.value,
+            defaultValue: prev.defaultValue,
+            type: prev.type,
+            options: prev.options,
+          }
+        : v;
     });
 
-    set({ content, variables: merged, isDirty: true });
+    set((state) => ({
+      content,
+      promptVariables: merged,
+      variables: state.editorMode === 'template' ? merged : state.variables,
+      promptDirty: true,
+      isDirty: true,
+    }));
   },
 
-  setVariables: (variables) => set({ variables, isDirty: true }),
+  setVariables: (variables) =>
+    set((state) => {
+      const patch =
+        state.editorMode === 'chat'
+          ? { chatVariables: variables, chatDirty: true }
+          : { promptVariables: variables, promptDirty: true };
+      return {
+        ...patch,
+        variables,
+        isDirty: true,
+      };
+    }),
 
   setVariableValue: (name, value) => {
-    const variables = get().variables.map((v) =>
-      v.name === name ? { ...v, value } : v,
+    const state = get();
+    const variables = state.variables.map((v) => (v.name === name ? { ...v, value } : v));
+    set(
+      state.editorMode === 'chat'
+        ? { variables, chatVariables: variables }
+        : { variables, promptVariables: variables },
     );
-    set({ variables });
   },
 
-  setMessages: (messages) => set({ messages, isDirty: true }),
+  setMessages: (messages) => {
+    const detected = get().detectVariables(messages.map((m) => m.content).join('\n'));
+    const existing = get().chatVariables;
+    const merged = detected.map((v) => {
+      const prev = existing.find((e) => e.name === v.name);
+      return prev
+        ? {
+            ...v,
+            value: prev.value,
+            defaultValue: prev.defaultValue,
+            type: prev.type,
+            options: prev.options,
+          }
+        : v;
+    });
+    set((state) => ({
+      messages,
+      chatVariables: merged,
+      variables: state.editorMode === 'chat' ? merged : state.variables,
+      chatDirty: true,
+      isDirty: true,
+    }));
+  },
 
   addMessage: (message) =>
     set((state) => ({
       messages: [...state.messages, message],
+      chatDirty: true,
       isDirty: true,
     })),
 
@@ -78,29 +143,94 @@ export const usePromptStore = create<PromptEditorState>((set, get) => ({
     set((state) => {
       const messages = [...state.messages];
       messages[index] = message;
-      return { messages, isDirty: true };
+      const detected = get().detectVariables(messages.map((m) => m.content).join('\n'));
+      const merged = detected.map((v) => {
+        const prev = state.chatVariables.find((e) => e.name === v.name);
+        return prev
+          ? {
+              ...v,
+              value: prev.value,
+              defaultValue: prev.defaultValue,
+              type: prev.type,
+              options: prev.options,
+            }
+          : v;
+      });
+      return {
+        messages,
+        chatVariables: merged,
+        variables: state.editorMode === 'chat' ? merged : state.variables,
+        chatDirty: true,
+        isDirty: true,
+      };
     }),
 
   removeMessage: (index) =>
-    set((state) => ({
-      messages: state.messages.filter((_, i) => i !== index),
-      isDirty: true,
-    })),
+    set((state) => {
+      const messages = state.messages.filter((_, i) => i !== index);
+      const detected = get().detectVariables(messages.map((m) => m.content).join('\n'));
+      const merged = detected.map((v) => {
+        const prev = state.chatVariables.find((e) => e.name === v.name);
+        return prev
+          ? {
+              ...v,
+              value: prev.value,
+              defaultValue: prev.defaultValue,
+              type: prev.type,
+              options: prev.options,
+            }
+          : v;
+      });
+      return {
+        messages,
+        chatVariables: merged,
+        variables: state.editorMode === 'chat' ? merged : state.variables,
+        chatDirty: true,
+        isDirty: true,
+      };
+    }),
 
   reorderMessages: (from, to) =>
     set((state) => {
       const messages = [...state.messages];
       const [moved] = messages.splice(from, 1);
       messages.splice(to, 0, moved);
-      return { messages, isDirty: true };
+      return { messages, chatDirty: true, isDirty: true };
     }),
 
-  resetDirty: () => set({ isDirty: false }),
+  resetDirty: (scope = 'all') =>
+    set((state) => {
+      const promptDirty = scope === 'all' || scope === 'prompt' ? false : state.promptDirty;
+      const chatDirty = scope === 'all' || scope === 'chat' ? false : state.chatDirty;
+      return { promptDirty, chatDirty, isDirty: promptDirty || chatDirty };
+    }),
+
+  hydratePrompt: (content, variables) =>
+    set((state) => ({
+      content,
+      promptVariables: variables,
+      variables: state.editorMode === 'template' ? variables : state.variables,
+      promptDirty: false,
+      isDirty: state.chatDirty,
+    })),
+
+  hydrateChat: (messages, variables) =>
+    set((state) => {
+      const detected =
+        variables ?? get().detectVariables(messages.map((m) => m.content).join('\n'));
+      return {
+        messages,
+        chatVariables: detected,
+        variables: state.editorMode === 'chat' ? detected : state.variables,
+        chatDirty: false,
+        isDirty: state.promptDirty,
+      };
+    }),
 
   resolveTemplate: () => {
-    const { content, variables } = get();
+    const { content, promptVariables } = get();
     let resolved = content;
-    for (const v of variables) {
+    for (const v of promptVariables) {
       const val = v.value || v.defaultValue || `{{${v.name}}}`;
       resolved = resolved.replaceAll(`{{${v.name}}}`, val);
     }

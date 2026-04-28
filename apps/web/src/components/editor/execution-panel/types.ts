@@ -35,6 +35,7 @@ export interface ExecutionResult {
 export interface ExecutionPanelProps {
   promptId: string;
   promptVersionId: string | null;
+  chatVersionId?: string | null;
   defaultModel?: string | null;
   isDirty?: boolean;
   editorMode?: 'template' | 'chat';

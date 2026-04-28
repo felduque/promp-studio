@@ -10,7 +10,13 @@ import { ApiProperty } from '@nestjs/swagger';
 export class ExecutePromptDto {
   @ApiProperty({ example: 'uuid-version' })
   @IsString()
-  promptVersionId: string;
+  @IsOptional()
+  promptVersionId?: string;
+
+  @ApiProperty({ example: 'uuid-chat-version', required: false })
+  @IsString()
+  @IsOptional()
+  chatVersionId?: string;
 
   @ApiProperty({ example: 'gpt-4o' })
   @IsString()
@@ -63,12 +69,18 @@ export class PreviewExecuteDto {
   @IsOptional()
   source?: 'prompt' | 'chat';
 
-  @ApiProperty({ example: 'Contenido del prompt para modo template', required: false })
+  @ApiProperty({
+    example: 'Contenido del prompt para modo template',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   content?: string;
 
-  @ApiProperty({ example: [{ role: 'user', content: 'Hola' }], required: false })
+  @ApiProperty({
+    example: [{ role: 'user', content: 'Hola' }],
+    required: false,
+  })
   @IsArray()
   @IsOptional()
   messages?: PreviewMessage[];
@@ -95,7 +107,10 @@ export class PreviewExecuteDto {
 }
 
 export class StreamExecuteDto {
-  @ApiProperty({ example: ['gpt-4o', 'claude-3-sonnet'], description: 'Models to execute against' })
+  @ApiProperty({
+    example: ['gpt-4o', 'claude-3-sonnet'],
+    description: 'Models to execute against',
+  })
   @IsArray()
   @IsString({ each: true })
   models: string[];
@@ -104,6 +119,11 @@ export class StreamExecuteDto {
   @IsString()
   @IsOptional()
   promptVersionId?: string;
+
+  @ApiProperty({ example: 'uuid-chat-version', required: false })
+  @IsString()
+  @IsOptional()
+  chatVersionId?: string;
 
   @ApiProperty({ example: 'prompt', enum: ['prompt', 'chat'], required: false })
   @IsString()
