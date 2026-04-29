@@ -51,30 +51,30 @@ export class ChatVersion {
   @Column({ type: 'jsonb', nullable: true })
   parameters: ChatParameters | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   provider: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   model: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   parentVersionId: string | null;
 
   @ManyToOne(() => ChatVersion, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'parentVersionId' })
   parentVersion: ChatVersion | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   authorId: string | null;
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'authorId' })
   author: User | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   commitMessage: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   tag: string | null;
 
   @Column({ type: 'jsonb', nullable: true })

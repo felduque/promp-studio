@@ -43,20 +43,20 @@ export class PromptVersion {
     content: string;
   }[];
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   parentVersionId: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   commitMessage: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   authorId: string | null;
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'authorId' })
   author: User;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   tag: string | null;
 
   @OneToMany(() => Execution, (execution) => execution.promptVersion)

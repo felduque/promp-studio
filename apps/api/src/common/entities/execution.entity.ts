@@ -19,7 +19,7 @@ export class Execution {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   promptVersionId: string | null;
 
   @ManyToOne(() => PromptVersion, (version) => version.executions, {
@@ -29,7 +29,7 @@ export class Execution {
   @JoinColumn({ name: 'promptVersionId' })
   promptVersion: PromptVersion;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   chatVersionId: string | null;
 
   @ManyToOne(() => ChatVersion, { onDelete: 'SET NULL', nullable: true })

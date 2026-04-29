@@ -27,7 +27,7 @@ export class PromptTemplate {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   @Index()
   userId: string | null;
 
