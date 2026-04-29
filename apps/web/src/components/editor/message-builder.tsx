@@ -72,8 +72,8 @@ export function MessageBuilder() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <ScrollArea className="flex-1 p-3">
+    <div className="flex flex-col h-full min-h-0">
+      <ScrollArea className="flex-1 min-h-0 p-3">
         <div className="space-y-3">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">

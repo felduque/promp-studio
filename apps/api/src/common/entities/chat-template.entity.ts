@@ -27,7 +27,7 @@ export class ChatTemplate {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   @Index()
   userId: string | null;
 
@@ -63,10 +63,10 @@ export class ChatTemplate {
   @Column({ type: 'jsonb', nullable: true })
   parameters: ChatParameters | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   provider: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   model: string | null;
 
   @Column({ type: 'jsonb', nullable: true })

@@ -29,13 +29,13 @@ export class Prompt {
   @JoinColumn({ name: 'projectId' })
   project: Project;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   currentVersionId: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   currentChatVersionId: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   defaultModel: string | null;
 
   @OneToMany(() => PromptVersion, (version) => version.prompt)
